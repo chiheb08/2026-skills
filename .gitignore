@@ -1,0 +1,16 @@
+.DS_Store
+**/.DS_Store
+
+# Python
+__pycache__/
+*.pyc
+
+# Node
+node_modules/
+
+# Airflow
+airflow.db
+logs/
+
+# Misc
+*.log

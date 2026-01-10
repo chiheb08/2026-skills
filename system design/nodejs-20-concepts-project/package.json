@@ -1,0 +1,23 @@
+{
+  "name": "nodejs-20-concepts-project",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "A tiny runnable project that demonstrates essential Node.js concepts with simple examples.",
+  "scripts": {
+    "start:http": "node http/server.js",
+    "start:express": "node express/app.js",
+    "demo:async": "node src/async-demo.js",
+    "demo:eventloop": "node src/event-loop-demo.js",
+    "demo:env": "node src/env-demo.js",
+    "demo:errors": "node src/error-handling-demo.js",
+    "demo:streams": "node streams/stream-demo.js",
+    "demo:buffer": "node streams/buffer-demo.js",
+    "demo:worker": "node workers/worker-demo.js",
+    "demo:bench": "node scripts/bench.js"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2"
+  }
+}
