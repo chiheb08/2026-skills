@@ -1,0 +1,56 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+
+# Environments
+.venv/
+venv/
+env/
+.env
+.env.*
+.python-version
+
+# Conda
+.conda/
+conda-bld/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Airflow
+airflow.cfg
+airflow.db
+webserver_config.py
+logs/
+
+# Ray
+ray_results/
+*.rdb
+*.rdb-journal
+
+# Spark
+metastore_db/
+spark-warehouse/
+derby.log
+
+# Data outputs (generated)
+data/**/*.csv
+data/**/*.parquet
+data/**/*.jsonl
+data/**/*.avro
+data/**/*.orc
+data/**/output*/
+data/**/outputs*/
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
+
+

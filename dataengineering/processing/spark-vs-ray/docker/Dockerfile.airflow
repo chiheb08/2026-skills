@@ -1,0 +1,25 @@
+FROM apache/airflow:2.9.3-python3.10
+
+USER root
+
+# Java is required for Spark (PySpark).
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends openjdk-17-jre-headless \
+  && apt-get clean \
+  && rm -rf /var/lib/apt/lists/*
+
+USER airflow
+
+# Install Spark + Ray dependencies.
+# - pyspark includes Spark jars and a local Spark runtime (local mode)
+# - ray requires pyarrow for parquet IO in Ray Data
+RUN pip install --no-cache-dir \
+  pyspark==3.5.1 \
+  ray==2.9.3 \
+  pyarrow==15.0.2 \
+  psutil==5.9.8
+
+# Copy entrypoint that initializes Airflow DB + user and starts scheduler+webserver.
+COPY --chown=airflow:root docker/entrypoint.sh /opt/airflow/entrypoint.sh
+RUN chmod +x /opt/airflow/entrypoint.sh
+
