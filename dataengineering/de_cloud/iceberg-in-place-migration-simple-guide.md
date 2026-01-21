@@ -90,18 +90,18 @@ The AWS article’s key idea is: use **DynamoDB as a control plane** to track wh
 
 ```mermaid
 flowchart TB
-  DDB[(DynamoDB\nmigration-control-table)]
-  S3[(Amazon S3\nExisting Parquet files)]
-  ICE[(Iceberg tables\nMetadata + Catalog entries)]
+  DDB[(DynamoDB<br/>migration-control-table)]
+  S3[(Amazon S3<br/>Existing Parquet files)]
+  ICE[(Iceberg tables<br/>Metadata + Catalog entries)]
   EMR[EMR / Spark migration workers]
   GLUE[Glue / Spark migration workers]
-  Q[Query engines\nAthena / Spark / etc.]
+  Q[Query engines<br/>Athena / Spark / etc.]
 
   DDB -->|work items: s3_path -> target_db/table| EMR
   DDB -->|work items: s3_path -> target_db/table| GLUE
 
-  EMR -->|add/register files\n(no rewrite)| ICE
-  GLUE -->|add/register files\n(no rewrite)| ICE
+  EMR -->|"add/register files<br/>(no rewrite)"| ICE
+  GLUE -->|"add/register files<br/>(no rewrite)"| ICE
 
   S3 --- ICE
   ICE --> Q
