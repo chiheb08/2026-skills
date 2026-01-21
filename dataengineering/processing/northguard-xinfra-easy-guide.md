@@ -88,8 +88,8 @@ Apps (Producers/Consumers)
 flowchart TB
   A[Apps<br/>Producers + Consumers] --> C[Xinfra clients<br/>Unified API]
   C --> X[Xinfra virtualization layer<br/>Virtual topics + epochs]
-  X -->|epoch points to| K[Kafka cluster(s)]
-  X -->|epoch points to| N[Northguard cluster(s)]
+  X -->|"epoch points to"| K[Kafka clusters]
+  X -->|"epoch points to"| N[Northguard clusters]
 ```
 
 ---
