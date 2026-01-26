@@ -144,6 +144,46 @@ packed values"]
 
 ---
 
+## llama.cpp: how it relates to INT4 decoding (simple architecture)
+
+**Yes, `llama.cpp` is related** because it is commonly used to run **quantized models** (often INT8/INT4) on **CPU**.
+
+When the model is INT4, the CPU saves time reading fewer bytes… but it must spend extra work **decoding/unpacking** those 4-bit values so it can do math.
+
+### Very simple architecture
+
+```mermaid
+flowchart LR
+  F["Quantized model file
+(e.g., GGUF INT4)"] --> L["llama.cpp runtime"]
+  L --> C["CPU cache/RAM
+read packed INT4 weights"]
+  C --> D["Decode / dequantize
+unpack 4-bit -> int8/float
++ apply scale"]
+  D --> M["MatMul / Attention
+(main math)"]
+  M --> O["Next token
+(output)"]
+
+  style D fill:#ffe6b3,stroke:#555,stroke-width:2px
+  style M fill:#e6f2ff,stroke:#555,stroke-width:2px
+```
+
+### Where the bottleneck can be (one line)
+
+- If **Decode/Dequantize** is slower than the matmul, then decoding becomes the bottleneck on CPU.
+
+### Easy intuition
+
+```text
+FP16 path:  read -> matmul
+INT4 path:  read -> decode/unpack -> matmul
+                   ^ extra step (sometimes expensive on CPU)
+```
+
+---
+
 ## Training (learning) — where the precisions show up
 
 Training has 3 big steps:
