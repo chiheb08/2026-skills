@@ -89,6 +89,61 @@ So the difference is: **how much space each number takes**, and **how much round
 
 ---
 
+## INT4 on CPU: “save bytes, spend decode” (super simple)
+
+Start from this sentence:
+
+> **Ultra-low-bit formats like 4-bit often require extra decoding steps. On CPUs, that decoding can become a bottleneck. You save memory bandwidth but spend more cycles unpacking values.**
+
+### What this means in plain words
+
+- **INT4 (4-bit)** makes weights **smaller**, so the CPU reads fewer bytes from RAM (good).
+- But the CPU usually can’t do math directly on “half-a-byte numbers”. So it must **unpack/convert** them first (extra work).
+
+### Why “decoding/unpacking” is needed
+
+A CPU reads memory in chunks like bytes/words. With INT4, weights are stored **packed**:
+
+```text
+One byte (8 bits) can store two INT4 values:
+  [aaaa bbbb]
+   ^^^^ ^^^^
+   w1   w2
+
+To use them, the CPU must:
+  1) extract aaaa and bbbb
+  2) turn them into bigger numbers (int8/float)
+  3) apply a scale (and sometimes a zero-point)
+```
+
+### The tradeoff (one picture)
+
+![INT4 decode overhead on CPU](assets/int4-decoding-cpu-bottleneck.png)
+
+### “Architecture” view (where the time goes)
+
+```mermaid
+flowchart LR
+  RAM["RAM / Cache
+weights stored"] --> FP16["FP16/BF16 path
+use directly"]
+  RAM --> INT4["INT4 path
+packed values"]
+  INT4 --> DEC["Decode/unpack
++ scale"]
+  FP16 --> MM1["MatMul"]
+  DEC --> MM2["MatMul"]
+  MM1 --> OUT1["Output"]
+  MM2 --> OUT2["Output"]
+```
+
+### When INT4 helps vs hurts (easy rule)
+
+- **Helps** when you are **memory-bandwidth bound** (weights are huge, RAM/cache is the slow part).
+- **Hurts** when decoding is slow and becomes the new limit (CPU spends time unpacking instead of doing matmul).
+
+---
+
 ## Training (learning) — where the precisions show up
 
 Training has 3 big steps:
