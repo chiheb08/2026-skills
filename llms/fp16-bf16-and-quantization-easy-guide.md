@@ -1,5 +1,52 @@
 # FP32 vs FP16 vs BF16 (and INT8/INT4) — An Easy, Detailed Guide for Junior LLM Engineers
 
+## Explain it like you’re 5 (ELI5)
+
+Imagine an LLM is a **huge kitchen** that cooks soup using numbers.
+
+### Numbers are stored in “cups”
+
+Computers don’t store “perfect” numbers. They store numbers using a cup that has two important parts:
+- **How big the cup can be** (range)
+- **How many little marks are on the cup** (precision)
+
+```
+Big cup = can hold very big / very small amounts without spilling
+More marks = can measure more precisely
+```
+
+### FP32, FP16, BF16 (kid version)
+
+- **FP32**: **big cup + many marks**
+  - Very safe, very accurate
+  - But heavier to carry (uses more memory)
+
+- **FP16**: **small cup + some marks**
+  - Lighter and faster
+  - But it spills easily (numbers can become too big → `inf`) or disappears (too small → 0)
+
+- **BF16**: **big cup + fewer marks**
+  - Almost as safe as FP32 for “not spilling” (good range)
+  - Not as precise as FP16, but usually good enough to cook the soup correctly
+
+### Why LLMs care
+
+- When **training** (learning), the kitchen mixes lots of ingredients and the amounts can change a lot.
+  - If the cup is too small (FP16), things spill/vanish → training can break.
+  - BF16 is popular because the cup is big enough to avoid many spills.
+
+- When **inference** (just serving answers), you mostly want speed.
+  - FP16/BF16 are often used because they’re faster and use less memory than FP32.
+
+### INT8 / INT4 (super small cups)
+
+INT8/INT4 are like using **tiny measuring spoons** instead of cups:
+- very small storage (cheap!)
+- can be fast
+- but you lose detail, so you must be careful or the taste (quality) changes
+
+---
+
 ## Why this matters (the LLM reality)
 
 Large Language Models are basically **giant math machines**:
