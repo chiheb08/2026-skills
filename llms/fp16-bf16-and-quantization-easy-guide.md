@@ -1,41 +1,82 @@
 # FP32 vs FP16 vs BF16 (and INT8/INT4) — An Easy, Detailed Guide for Junior LLM Engineers
 
-## Introduction: what FP32/FP16/BF16 actually are
+## Introduction: what FP32/FP16/BF16 actually are (super simple)
 
-FP32, FP16, and BF16 are **not datasets** and not “words”. They are just **ways to store numbers** in memory.
+### Think of the model as a giant spreadsheet of numbers
 
-LLMs are full of **numeric arrays (tensors)**. Those tensors contain values like `0.12`, `-1.7`, `3.14`, etc.
-FP32/FP16/BF16 decide **how many bits** we use to store each value, which changes **size**, **speed**, and **how much rounding happens**.
+An LLM is not stored as words inside the GPU. Inside the GPU, an LLM is mostly **huge tables (tensors) of numbers**.
+FP32 / FP16 / BF16 are simply different **ways to store each number** in those tables.
 
-### What they store (real examples)
+### What do they store exactly?
 
-- **Weights (the model’s learned memory)**: billions of numbers like `-0.0042`, `0.31`, `1.78`.
-  - Example: an embedding table row might look like `[0.12, -0.03, 1.80, ...]` (floats).
-- **Activations (temporary numbers while the model runs)**: intermediate vectors/matrices like `[-0.7, 0.12, 2.3, ...]`.
-- **Logits (scores before choosing the next token)**: numbers like `[ -1.2, 3.4, 0.1, ... ]` (one score per vocabulary token).
-- **Gradients (training only)**: tiny numbers like `-0.00003`, `0.0021` that tell the model how to update weights.
-- **Optimizer state (training only)**: extra helper tensors (often stored in FP32 for stability).
+They store **normal decimal-like numbers** such as:
+- `0.12`
+- `-1.7`
+- `3.14`
 
-### What they do NOT store
+These numbers appear in many places inside an LLM:
+- **Weights** (the model’s learned memory): billions of numbers.
+- **Embeddings** (numbers for each token): a row might look like `[0.12, -0.03, 1.80, ...]`.
+- **Activations** (temporary numbers while running): `[-0.7, 0.12, 2.3, ...]`.
+- **Logits** (scores before picking the next token): `[-1.2, 3.4, 0.1, ...]`.
 
-- **Your dataset text** (sentences, PDFs, documents). That stays as text files (or Parquet/JSON/etc.).
-- **Tokens/words as words**. The tokenizer converts text into **token IDs (integers)** like `40, 1842, 11690`.
+### What do they NOT store?
 
-### One tiny end-to-end example
+- They do **not** store your dataset text (PDFs, sentences, documents). That stays as text/Parquet/JSON on disk.
+- They do **not** store words directly. Text is first converted into **token IDs** (integers).
 
-1. Text: `"I love pizza"` (real data)
-2. Token IDs: `[40, 1842, 11690]` (integers)
-3. The model looks up and computes floats (stored as FP32/FP16/BF16/INT8/INT4 depending on your choice):
-   - embedding floats: `[0.12, -0.03, 1.80, ...]`
-   - activation floats: `[-0.7, 0.12, 2.3, ...]`
-   - logits floats: `[ -1.2, 3.4, 0.1, ... ]`
+### A tiny real example (from text to numbers)
 
-### Quick size intuition
+1) Text (real data): `"I love pizza"`
+2) Token IDs (integers): `[40, 1842, 11690]`
+3) Model numbers (floats stored as FP32/FP16/BF16):
+- embedding floats: `[0.12, -0.03, 1.80, ...]`
+- activation floats: `[-0.7, 0.12, 2.3, ...]`
+- logits floats: `[-1.2, 3.4, 0.1, ...]`
 
-- FP32 uses **4 bytes** per number
-- FP16/BF16 use **2 bytes** per number
-- INT8 uses **1 byte** per number (quantized)
-- INT4 uses **0.5 bytes** per number (quantized)
+### Diagram: what is text vs what is FP32/FP16/BF16
+
+```
+Dataset text (real files)
+   |
+   v
+Tokenizer
+   |
+   v
+Token IDs (integers)
+   |
+   v
+Model tables of numbers (floats)  <-- stored as FP32 or FP16 or BF16
+   - weights
+   - embeddings
+   - activations
+   - logits
+```
+
+### “Architecture” view (who holds what)
+
+```mermaid
+flowchart LR
+  DS["Dataset on disk<br/>text/parquet/json"] --> TK["Tokenizer"]
+  TK --> IDS["Token IDs<br/>integers"]
+  IDS --> GPU["GPU runs the model"]
+  GPU --> OUT["Output text"]
+
+  subgraph InsideGPU["Inside the GPU: mostly numbers"]
+    W["Weights<br/>floats"]
+    A["Activations<br/>floats"]
+    L["Logits<br/>floats"]
+  end
+
+  GPU --- InsideGPU
+  note1["FP32/FP16/BF16 are formats for those floats"] --- InsideGPU
+```
+
+### Quick size intuition (why we care)
+
+- FP32: **4 bytes** per number (bigger, safer)
+- FP16/BF16: **2 bytes** per number (smaller, faster)
+- INT8/INT4: even smaller (quantized)
 
 ---
 
