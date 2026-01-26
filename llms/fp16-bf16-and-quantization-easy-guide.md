@@ -1,5 +1,44 @@
 # FP32 vs FP16 vs BF16 (and INT8/INT4) — An Easy, Detailed Guide for Junior LLM Engineers
 
+## Introduction: what FP32/FP16/BF16 actually are
+
+FP32, FP16, and BF16 are **not datasets** and not “words”. They are just **ways to store numbers** in memory.
+
+LLMs are full of **numeric arrays (tensors)**. Those tensors contain values like `0.12`, `-1.7`, `3.14`, etc.
+FP32/FP16/BF16 decide **how many bits** we use to store each value, which changes **size**, **speed**, and **how much rounding happens**.
+
+### What they store (real examples)
+
+- **Weights (the model’s learned memory)**: billions of numbers like `-0.0042`, `0.31`, `1.78`.
+  - Example: an embedding table row might look like `[0.12, -0.03, 1.80, ...]` (floats).
+- **Activations (temporary numbers while the model runs)**: intermediate vectors/matrices like `[-0.7, 0.12, 2.3, ...]`.
+- **Logits (scores before choosing the next token)**: numbers like `[ -1.2, 3.4, 0.1, ... ]` (one score per vocabulary token).
+- **Gradients (training only)**: tiny numbers like `-0.00003`, `0.0021` that tell the model how to update weights.
+- **Optimizer state (training only)**: extra helper tensors (often stored in FP32 for stability).
+
+### What they do NOT store
+
+- **Your dataset text** (sentences, PDFs, documents). That stays as text files (or Parquet/JSON/etc.).
+- **Tokens/words as words**. The tokenizer converts text into **token IDs (integers)** like `40, 1842, 11690`.
+
+### One tiny end-to-end example
+
+1. Text: `"I love pizza"` (real data)
+2. Token IDs: `[40, 1842, 11690]` (integers)
+3. The model looks up and computes floats (stored as FP32/FP16/BF16/INT8/INT4 depending on your choice):
+   - embedding floats: `[0.12, -0.03, 1.80, ...]`
+   - activation floats: `[-0.7, 0.12, 2.3, ...]`
+   - logits floats: `[ -1.2, 3.4, 0.1, ... ]`
+
+### Quick size intuition
+
+- FP32 uses **4 bytes** per number
+- FP16/BF16 use **2 bytes** per number
+- INT8 uses **1 byte** per number (quantized)
+- INT4 uses **0.5 bytes** per number (quantized)
+
+---
+
 ## Explain it like you’re 5 (ELI5)
 
 ### The 10-second version
