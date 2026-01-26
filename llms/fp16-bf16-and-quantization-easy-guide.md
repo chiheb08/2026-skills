@@ -10,6 +10,47 @@
 This is the basic unit of storage used everywhere in computers (files, RAM, GPU memory).
 Reference: Stanford CS101 — [Bits and Bytes](https://web.stanford.edu/class/cs101/bits-bytes.html).
 
+
+### Step 0.5 — KB/MB/GB conversions (super practical)
+
+First, remember:
+
+- **1 byte = 8 bits**
+
+Now there are **two common ways** people use KB/MB/GB:
+
+#### A) Decimal (SI) — common in networking, marketing
+
+- **1 KB = 1,000 bytes**
+- **1 MB = 1,000,000 bytes**
+- **1 GB = 1,000,000,000 bytes**
+- **1 TB = 1,000,000,000,000 bytes**
+
+**Example:**
+
+- **1 GB = 1,000,000,000 bytes**
+
+#### B) Binary (GiB) — common in OS memory reporting
+
+- **1 KiB = 1,024 bytes**
+- **1 MiB = 1,024 KiB = 1,048,576 bytes**
+- **1 GiB = 1,024 MiB = 1,073,741,824 bytes**
+
+**Example:**
+
+- **1 GiB = 1,073,741,824 bytes**
+
+#### Quick cheat table
+
+| Unit | Decimal bytes | Binary bytes |
+|---|---:|---:|
+| KB / KiB | 1,000 | 1,024 |
+| MB / MiB | 1,000,000 | 1,048,576 |
+| GB / GiB | 1,000,000,000 | 1,073,741,824 |
+
+> When you see “GPU has 24 GB VRAM”, that is usually **decimal GB**.
+> When your OS shows “24 GiB”, that is the **binary** version.
+
 ### Step 1 — What is inside an LLM? (not words)
 
 Inside the GPU, an LLM is mostly **big tables of numbers** (called tensors).
