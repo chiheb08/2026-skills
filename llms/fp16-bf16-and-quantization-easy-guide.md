@@ -2,6 +2,12 @@
 
 ## Explain it like you’re 5 (ELI5)
 
+### The 10-second version
+
+- LLMs do **lots of math**.
+- Numbers can be stored as **big careful numbers** (slower, bigger) or **small quick numbers** (faster, smaller).
+- If numbers are too small/rough, the model can **make more mistakes**.
+
 Imagine an LLM is a **huge kitchen** that cooks soup using numbers.
 
 ### Numbers are stored in “cups”
@@ -44,6 +50,23 @@ INT8/INT4 are like using **tiny measuring spoons** instead of cups:
 - very small storage (cheap!)
 - can be fast
 - but you lose detail, so you must be careful or the taste (quality) changes
+
+### Quantization (ELI5)
+
+**Quantization** means: instead of storing “smooth” numbers with millions of possible values, we store “chunky” numbers with fewer possible values.
+
+Kid example:
+- If you can only count using **0, 1, 2, 3, 4**, you can’t represent **2.7** exactly.
+- So you pick the closest: **3**.
+
+That is quantization: **rounding to fewer choices**.
+
+Why people do it for LLMs:
+- the model becomes **smaller** (cheaper to store)
+- it can run **faster** (less memory to read)
+
+Why it can hurt:
+- rounding changes numbers a bit, so answers can change a bit too
 
 ---
 
