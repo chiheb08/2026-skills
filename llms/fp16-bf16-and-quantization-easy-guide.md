@@ -68,6 +68,46 @@ Why people do it for LLMs:
 Why it can hurt:
 - rounding changes numbers a bit, so answers can change a bit too
 
+### Where FP32 lives vs where text lives (ELI5 diagram)
+
+```mermaid
+flowchart TB
+  A["Your dataset real data<br/>Text: I love pizza"] --> B["Tokenizer<br/>turns text into IDs"]
+  B --> C["Token IDs are integers<br/>Example: 40, 1842, 11690"]
+  C --> D["Embedding table<br/>a big grid of numbers"]
+  D --> E["Embedding vectors are floats<br/>Example: 0.12, -0.03, 1.80"]
+  E --> F["Neural net layers<br/>attention and MLP math"]
+  F --> G["Activations are floats<br/>intermediate numbers"]
+  G --> H["Logits are floats<br/>scores for next token"]
+  H --> I["Sampler picks next token ID<br/>integer"]
+  I --> J["Detokenizer<br/>output text"]
+
+  subgraph Precision["Where FP32 or BF16 or FP16 or INT8 can apply"]
+    D
+    E
+    F
+    G
+    H
+  end
+
+  subgraph NotFP["Usually not FP32"]
+    A
+    B
+    C
+    I
+    J
+  end
+```
+
+```text
+TEXT (dataset) -> tokenizer -> TOKEN IDs (integers)
+                      |
+                      v
+        MODEL NUMBERS (floats) = weights, activations, logits
+        Those floats may be stored as FP32 or BF16 or FP16
+```
+
+
 ---
 
 ## Why this matters (the LLM reality)
