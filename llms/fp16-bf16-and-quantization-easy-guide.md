@@ -1,89 +1,50 @@
 # FP32 vs FP16 vs BF16 (and INT8/INT4) — An Easy, Detailed Guide for Junior LLM Engineers
 
-## Introduction: what FP32/FP16/BF16 actually are (super simple)
+## Introduction (super easy): bits, bytes, then FP32/FP16/BF16
 
-### Think of the model as a giant spreadsheet of numbers
+### Step 0 — Bit and Byte (the very basics)
 
-An LLM is not stored as words inside the GPU. Inside the GPU, an LLM is mostly **huge tables (tensors) of numbers**.
-FP32 / FP16 / BF16 are simply different **ways to store each number** in those tables.
+- A **bit** is the smallest piece of storage: it is either **0** or **1**.
+- A **byte** is **8 bits**.
 
-### What do they store exactly?
+This is the basic unit of storage used everywhere in computers (files, RAM, GPU memory).
+Reference: Stanford CS101 — [Bits and Bytes](https://web.stanford.edu/class/cs101/bits-bytes.html).
 
-They store **normal decimal-like numbers** such as:
-- `0.12`
-- `-1.7`
-- `3.14`
+### Step 1 — What is inside an LLM? (not words)
 
-These numbers appear in many places inside an LLM:
-- **Weights** (the model’s learned memory): billions of numbers.
-- **Embeddings** (numbers for each token): a row might look like `[0.12, -0.03, 1.80, ...]`.
-- **Activations** (temporary numbers while running): `[-0.7, 0.12, 2.3, ...]`.
-- **Logits** (scores before picking the next token): `[-1.2, 3.4, 0.1, ...]`.
+Inside the GPU, an LLM is mostly **big tables of numbers** (called tensors).
+Those numbers look like: `0.12`, `-1.7`, `3.14`.
 
-### What do they NOT store?
+Important: your **dataset text** (sentences, PDFs) is not stored as FP32 in the model.
+Text becomes **token IDs** (integers), and the model uses **floats** to do math.
 
-- They do **not** store your dataset text (PDFs, sentences, documents). That stays as text/Parquet/JSON on disk.
-- They do **not** store words directly. Text is first converted into **token IDs** (integers).
+### Step 2 — What are FP32 / FP16 / BF16?
 
-### A tiny real example (from text to numbers)
+They are just different ways to store **one number** using a certain number of **bits**:
+- **FP32** stores one number using **32 bits = 4 bytes**
+- **FP16** stores one number using **16 bits = 2 bytes**
+- **BF16** stores one number using **16 bits = 2 bytes** (same size as FP16)
 
-1) Text (real data): `"I love pizza"`
-2) Token IDs (integers): `[40, 1842, 11690]`
-3) Model numbers (floats stored as FP32/FP16/BF16):
-- embedding floats: `[0.12, -0.03, 1.80, ...]`
-- activation floats: `[-0.7, 0.12, 2.3, ...]`
-- logits floats: `[-1.2, 3.4, 0.1, ...]`
+So the difference is: **how much space each number takes**, and **how much rounding happens**.
 
-### Diagram: what is text vs what is FP32/FP16/BF16
+### What do these floats store exactly? (real examples)
 
-```
-Dataset text (real files)
-   |
-   v
-Tokenizer
-   |
-   v
-Token IDs (integers)
-   |
-   v
-Model tables of numbers (floats)  <-- stored as FP32 or FP16 or BF16
-   - weights
-   - embeddings
-   - activations
-   - logits
-```
+- **Weights**: the model’s learned memory (billions of float numbers).
+- **Embeddings**: float vectors looked up for each token ID.
+- **Activations**: temporary float results while the model runs.
+- **Logits**: float scores used to pick the next token.
 
-### “Architecture” view (who holds what)
+### Picture 1 — bits/bytes and storage (like your example)
 
-```mermaid
-flowchart LR
-  DS["Dataset on disk<br/>text/parquet/json"] --> TK["Tokenizer"]
-  TK --> IDS["Token IDs<br/>integers"]
-  IDS --> GPU["GPU runs the model"]
-  GPU --> OUT["Output text"]
+![Bits, bytes, and model storage](assets/bits-bytes-storage.png)
 
-  subgraph InsideGPU["Inside the GPU: mostly numbers"]
-    W["Weights<br/>floats"]
-    A["Activations<br/>floats"]
-    L["Logits<br/>floats"]
-  end
+### Picture 2 — FP32 vs FP16 vs BF16 (comparison)
 
-  GPU --- InsideGPU
-  note1["FP32/FP16/BF16 are formats for those floats"] --- InsideGPU
-```
+![FP32 vs FP16 vs BF16 comparison](assets/fp32-fp16-bf16-comparison.png)
 
-### Quick size intuition (why we care)
+### Picture 3 — where precision is used (training vs inference)
 
-- FP32: **4 bytes** per number (bigger, safer)
-- FP16/BF16: **2 bytes** per number (smaller, faster)
-- INT8/INT4: even smaller (quantized)
-
-## Where FP32 / FP16 / BF16 are used (training vs inference)
-
-### The easiest mental model
-
-- **Training** = the model is **learning** (it updates its weights).
-- **Inference** = the model is **answering** (no learning; it only runs forward).
+![Training vs inference precision](assets/training-vs-inference-precision.png)
 
 ---
 
