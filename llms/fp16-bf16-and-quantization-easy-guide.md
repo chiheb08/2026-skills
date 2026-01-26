@@ -78,6 +78,92 @@ flowchart LR
 - FP16/BF16: **2 bytes** per number (smaller, faster)
 - INT8/INT4: even smaller (quantized)
 
+## Where FP32 / FP16 / BF16 are used (training vs inference)
+
+### The easiest mental model
+
+- **Training** = the model is **learning** (it updates its weights).
+- **Inference** = the model is **answering** (no learning; it only runs forward).
+
+---
+
+## Training (learning) — where the precisions show up
+
+Training has 3 big steps:
+
+1) **Forward pass** (compute activations + logits)
+2) **Backward pass** (compute gradients)
+3) **Optimizer step** (update weights)
+
+In practice (common today):
+- **Most math (forward/backward)** runs in **BF16** (or FP16) for speed.
+- Some sensitive pieces use **FP32** (often accumulation, optimizer states).
+
+### Training diagram
+
+```mermaid
+flowchart TB
+  A[Batch of token IDs
+integers] --> F[Forward pass
+activations + logits
+usually BF16 or FP16]
+  F --> L[Loss
+float]
+  L --> B[Backward pass
+gradients
+usually BF16 or FP16]
+  B --> O[Optimizer step
+updates weights
+often FP32 states]
+  O --> W[Weights stored for next step
+commonly BF16 weights + FP32 master/state]
+```
+
+### What is often FP32 during training (simple)
+
+```text
+Training uses extra memory compared to inference:
+- weights (often BF16/FP16)
+- gradients (BF16/FP16)
+- optimizer states (often FP32)  <-- very common
+- sometimes a FP32 master copy of weights (for stability)
+```
+
+---
+
+## Inference (answering) — where the precisions show up
+
+Inference is simpler: **forward pass only**.
+
+In practice (common today):
+- Weights are stored as **FP16/BF16** (or **INT8/INT4** if quantized).
+- Activations are computed in **FP16/BF16**.
+- There are **no gradients** and **no optimizer states**.
+
+### Inference diagram
+
+```mermaid
+flowchart LR
+  T[Token IDs
+integers] --> E[Embedding lookup
+weights: FP16/BF16 or INT8/INT4]
+  E --> M[Transformer layers
+matmul/attention
+compute: FP16/BF16]
+  M --> P[Logits
+float scores]
+  P --> S[Sampler
+pick next token ID
+integer]
+```
+
+### The one-line difference
+
+```text
+Training = forward + backward + optimizer (extra FP32 states)
+Inference = forward only (often lower precision for speed)
+```
+
 ---
 
 ## Explain it like you’re 5 (ELI5)
