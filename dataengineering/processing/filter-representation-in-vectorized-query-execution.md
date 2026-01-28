@@ -1,198 +1,227 @@
-# Filter Representation in Vectorized Query Execution (DAMON’21) — Junior-Friendly Explanation
+# Filter Representation in Vectorized Query Execution (DAMON’21) — Super Simple Explanation
 
-Paper: **“Filter Representation in Vectorized Query Execution”** (Ngom, Menon, Butrovich, Ma, Lim, Mowry, Pavlo), 2021.
+Paper: **“Filter Representation in Vectorized Query Execution”** (Ngom et al., 2021).
 
-This write‑up explains the paper in a way that a junior data engineer can follow. The goal is to understand:
-- what “vectorized execution” means
-- what “selection vectors” and “bitmaps” are
-- why one is sometimes faster than the other
-- what the paper’s recommendations are
+This is the “explain it like I’m new” version.
 
----
-
-## 1) The problem (in plain language)
-
-Modern analytical databases often keep data in **memory** (RAM).
-
-That changes the bottleneck:
-- Old world: disk was slow → optimize disk reads
-- New world: memory is fast → CPU efficiency matters a lot
-
-A popular CPU efficiency trick is **vectorized execution**.
-
-### What is vectorized execution?
-Instead of processing one row at a time, the engine processes a **batch** (a “vector”) of rows at a time.
-Typical batch size: ~1–2k tuples.
-
-Why this is faster:
-- less function-call / iterator overhead
-- better cache usage
-- more chances to use **SIMD** (CPU instructions that do the same operation on multiple values at once)
+You’ll learn:
+- what **vectorized execution** is (batch processing)
+- why DBs need a **filter representation** inside a batch
+- what **Selection Vectors (SV)** and **Bitmaps (BM)** are
+- why **SV wins sometimes** and **BM wins sometimes**
 
 ---
 
-## 2) Where “filters” come in
+## 1) Vectorized execution: the 10-second definition
 
-During query execution, operators keep narrowing the data:
-- scan a table
-- apply WHERE conditions
-- compute expressions
-- joins, groups, etc.
+Instead of processing **1 row at a time**, the DB processes a **small batch** (often 1–2k rows) at a time.
 
-After each step, the system must track:
-> which rows in the current batch are still “alive” (valid)
+Why this helps:
+- **Less overhead**: fewer “next() / iterator” calls
+- **Better cache use**: the CPU likes sequential work
+- **SIMD opportunity**: the CPU can do the same operation on multiple values at once
 
-The paper calls that tracking structure a **filter representation**.
+(You don’t need to be a CPU expert. Just remember: **batch work is easier for the CPU to do fast**.)
 
 ---
 
-## 3) Two filter representations
+## 2) The core problem: “some rows survive, some rows don’t”
+
+Inside one batch, you apply steps like:
+- `WHERE` filters
+- joins
+- computed columns
+
+After each step, you must remember:
+> which positions (rows) in this batch are still valid
+
+That “memory” is the **filter representation**.
+
+---
+
+## 3) Our tiny running example (we’ll reuse it)
+
+Batch positions: `0 1 2 3 4 5 6 7`
+
+Suppose a filter keeps only positions: **0, 3, 4, 7**
+
+There are two common ways to store this.
+
+---
+
+## 4) Two filter representations (SV vs BM)
 
 ### A) Selection Vector (SV)
-A **selection vector** is basically a list of indexes (tuple IDs) that survived.
 
-Example:
-- Batch has 8 rows: positions `0..7`
-- Rows that survived: `0, 3, 4, 7`
-- Selection vector: `[0, 3, 4, 7]`
+A **selection vector** is a list of the surviving indexes:
 
-Mental model:
-- It’s like a guest list: only these people are allowed in.
+- `SV = [0, 3, 4, 7]`
 
-**Cost shape:**
-- Great when few rows survive (small list).
-- But it introduces “indirection”: you read `idx = SV[i]` then access `col[idx]`.
+Analogy: **VIP guest list**.
+
+How you read data with SV (idea):
+- for each `idx` in the list, read `col[idx]`
+
+Good part:
+- if only a few rows survive, the list is short → you do less work
+
+Not-so-good part:
+- you have an extra “jump”: read `idx` first, then read `col[idx]` (indirection)
 
 ### B) Bitmap (BM)
-A **bitmap** stores 1 bit per row in the batch.
 
-Example:
-- Batch has 8 rows
-- Survived rows `0, 3, 4, 7`
-- Bitmap: `1 0 0 1 1 0 0 1`
+A **bitmap** is 1 bit per position:
 
-Mental model:
-- It’s like a row of light switches; ON means “row is valid.”
+- `BM = 1 0 0 1 1 0 0 1`
 
-**Cost shape:**
-- Great when many rows survive (dense selection).
-- Also great when you can process whole vectors with SIMD.
-- But iterating “only the 1s” can be expensive (bit scanning logic).
+Analogy: **light switches**. 1 = ON (keep), 0 = OFF (drop).
 
----
+Good part:
+- it aligns perfectly with positions 0..N → very nice for simple scans and SIMD
 
-## 4) Two types of operations: Update vs Map
+Not-so-good part:
+- iterating “only the 1s” can require extra bit-scanning logic
 
-The paper distinguishes two primitives over filtered vectors:
+### Diagram: same filter, two representations
 
-### Update
-- Applies a predicate and **changes** which rows are selected.
-- Example: WHERE clause filtering rows.
-
-### Map
-- Computes a new vector but **does not change** which rows are selected.
-- Example: projection like `SELECT price * 1.2`.
-
-Why this distinction matters:
-- Some “full compute” strategies are only valid for some combinations.
+![](filter-representation-assets/sv_vs_bitmap.png)
 
 ---
 
-## 5) Two compute strategies: Selective vs Full
+## 5) Two types of work operators do: Update vs Map
 
-Given a filter representation, you still have a choice:
+### Update (changes who survives)
+Example: `WHERE amount > 100`
+- some rows fail the predicate
+- the filter representation changes (SV list or BM bits change)
 
-### Selective compute
-Only process rows that are selected.
-
-- If selectivity is low (few rows survive), this saves work.
-
-### Full compute
-Process all rows in the batch regardless of selection.
-
-- Sounds wasteful, right?
-- But it can be faster if the operation is SIMD-friendly and the iteration is cheaper.
-
-This is one of the paper’s key messages:
-> Sometimes doing “more work” is faster because the work is simpler and vectorizes well.
+### Map (does NOT change who survives)
+Example: compute `amount_with_tax = amount * 1.2`
+- you compute a new vector
+- survivors are the same as before
 
 ---
 
-## 6) Why the “best” choice depends on selectivity
+## 6) Two compute strategies: Selective vs Full (this is the big “why”) 
 
-**Selectivity** = fraction of rows that are selected.
+Even after you have SV/BM, you can compute in two ways.
 
-- 0.05 selectivity means 5% of rows survive
-- 0.80 selectivity means 80% of rows survive
+### Strategy 1: Selective compute
+Compute only for surviving rows.
 
-Think of it like a school bus:
-- If only 3 kids are riding, you might drive directly to those 3 houses (selective).
-- If 90 kids are riding, you just drive the full route (full), because skipping streets is harder than it’s worth.
+In our example, survivors are `[0, 3, 4, 7]`, so you compute 4 times.
 
----
+This is usually great when selectivity is low (few survivors).
 
-## 7) The paper’s main finding (the “rule of thumb”)
+### Strategy 2: Full compute
+Compute for **every** position in the batch (0..7), then ignore results for invalid rows.
 
-From their microbenchmarks and analysis:
+This can sound wasteful, but it can be faster because:
+- the loop is simple and predictable
+- it can be SIMD vectorized
 
-- **Bitmaps tend to perform better** when the operation can be efficiently **SIMD vectorized**.
-- **Selection vectors tend to perform better** for other cases because iteration logic is cheaper.
+### Diagram: selective vs full
 
-More detailed:
-- SVs are great when selectivity is low (few rows survive) and you want to iterate only survivors cheaply.
-- BMs are great when you can use full scans + SIMD, especially at higher selectivities.
+![](filter-representation-assets/selective_vs_full.png)
 
 ---
 
-## 8) What the paper actually recommends (practical engineering)
+## 7) Selectivity: the knob that changes everything
 
-The authors argue that a good vectorized engine should:
+**Selectivity** = fraction of rows that survive.
 
-1) Support **both** representations (SV and BM)
-2) Pick representation/strategy dynamically based on:
-   - operation cost
-   - iteration cost
-   - SIMD friendliness
-   - selectivity
+- 10% selectivity → 10% survive → most rows die
+- 90% selectivity → 90% survive → most rows live
 
-They show that “one strategy always” is not optimal.
+Intuition (real life):
+- If only **3 people** passed security, you only guide those 3 to the room (selective)
+- If **almost everyone** passed, you just open the door and let the whole crowd flow (full scan)
 
----
+### Diagram: why “best choice” can flip
 
-## 9) Why this matters to you (junior data engineer angle)
+This chart is a **toy intuition** picture (not exact paper numbers), but it shows the idea:
 
-Even if you never implement a DBMS, the ideas map to real engineering:
-
-- **Dense vs sparse data structures**
-- **Branchy code vs vectorized code**
-- **Doing less work vs doing simpler work**
-
-This shows up in:
-- analytics engines
-- columnar formats
-- SIMD-friendly transformations
-- vectorized UDF execution
-
-If you work on performance-sensitive pipelines, you’ll keep seeing this pattern:
-> The fastest plan is the one that matches the hardware.
+![](filter-representation-assets/selectivity_intuition.png)
 
 ---
 
-## 10) Quick glossary
+## 8) The paper’s main result (in simple words)
 
-- **Tuple**: a row.
-- **Vector / batch**: a small group of rows processed together.
-- **Selectivity**: fraction of rows that pass a filter.
-- **SIMD**: CPU instructions that operate on multiple values per instruction.
-- **Selection vector**: list of surviving row indexes.
-- **Bitmap**: bitmask of surviving rows.
+Their experiments show:
+
+- **Bitmaps (BM) are strong** when the operation can be done with **SIMD** (vectorized CPU instructions).
+- **Selection vectors (SV) are strong** for many other operations because “iterate survivors” can be cheaper than bitmap scanning.
+
+So it’s not “BM always wins” or “SV always wins”.
+
+It depends on:
+- **selectivity** (how many survive)
+- **iteration cost** (how expensive is it to loop?)
+- **operation cost** (how expensive is the actual computation?)
+- **SIMD-friendliness** (can we do it in a vectorized way?)
 
 ---
 
-## 11) Takeaways (memory-friendly)
+## 9) Concrete examples (the stuff you can picture)
 
-If you only remember 3 things:
+### Example A: simple numeric predicate (SIMD-friendly)
+Predicate: `amount > 100`
 
-1) Vectorized engines process batches to reduce overhead and use caches better.
-2) After each operator, you must track which rows are still valid.
-3) SV vs BM is a tradeoff; the best depends on selectivity + SIMD ability.
+- This is a simple comparison over numbers.
+- CPUs can often do many comparisons at once (SIMD).
+
+Here, using **BM** can be very good, especially if selectivity is moderate/high.
+
+### Example B: string-heavy predicate (often not SIMD-friendly)
+Predicate: `email LIKE '%@gmail.com'` or regex checks
+
+- String ops have variable length, branching, and irregular memory access.
+
+Here, **SV** often makes sense if selectivity is low, because you don’t want extra bitmap scanning overhead.
+
+### Example C: expensive UDF
+Predicate: `is_fraud(transaction)` where `is_fraud` is complex
+
+- The operation itself is expensive.
+- If you can avoid calling it for rows that will be filtered out, that’s huge.
+
+This pushes you toward **SV + selective compute** (if selectivity is low).
+
+---
+
+## 10) Cheat-sheet (quick decision guide)
+
+This is a practical starter rule (not perfect, but useful):
+
+- **Few survivors (low selectivity)** → prefer **SV + selective compute**
+- **Many survivors (high selectivity)** AND computation is **SIMD-friendly** → prefer **BM + full compute**
+
+Simple table:
+
+| Situation | Likely better | Why |
+|---|---|---|
+| Filter keeps **very few** rows | SV | You only touch survivors |
+| Filter keeps **most** rows + work is SIMD-friendly | BM | Full scans + SIMD are efficient |
+| Work is branchy/irregular (strings, complex UDFs) | SV | Bitmap scanning overhead often won’t pay |
+| Not sure | Benchmark | Paper’s big message: it’s workload + hardware dependent |
+
+---
+
+## 11) Glossary (tiny)
+
+- **Tuple**: row
+- **Vector / batch**: small chunk of rows (often 1–2k)
+- **Selectivity**: fraction that survives
+- **SIMD**: do the same operation on multiple values in one instruction
+- **Selection vector (SV)**: list of surviving indexes
+- **Bitmap (BM)**: 1 bit per position (1 = survive)
+
+---
+
+## 12) 30-second recap
+
+- Vectorized engines process **batches** to reduce overhead.
+- Inside each batch, we need to track **which rows are valid**.
+- Two main choices: **SV** (list of survivors) and **BM** (bits).
+- **SV often wins** when few survive or work is irregular.
+- **BM often wins** when work is SIMD-friendly and many survive.
