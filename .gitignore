@@ -14,3 +14,6 @@ logs/
 
 # Misc
 *.log
+
+# Local context files (papers, notes)
+context/
