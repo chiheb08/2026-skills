@@ -4,7 +4,17 @@ This folder contains the complete architecture and deployment guide for building
 
 ## Contents
 
+### Core Architecture Documents
 - **`llm-as-a-service-architecture.md`**: Main architecture document with comprehensive technical details
+- **`litellm-local-models-architecture.md`**: Detailed architecture guide for locally hosted models (vLLM only)
+- **`architecture-diagrams.md`**: Interactive Mermaid diagrams for all architecture components
+
+### Configuration Files
+- **`litellm-config-local-models.yaml`**: Production-ready configuration for locally hosted models
+- **`litellm-production-configuration-guide.md`**: Complete production configuration guide for OpenShift & on-premise
+- **`LOCAL-MODELS-CONFIG-README.md`**: Step-by-step guide for using the local models configuration
+
+### Assets
 - **`architecture-assets/`**: Architecture diagrams (PNG files)
 
 ## Quick Overview
@@ -25,15 +35,35 @@ All components are deployed on **OpenShift** for scalability and management.
 
 ## Getting Started
 
+### For Locally Hosted Models (Recommended)
+1. Read **`litellm-local-models-architecture.md`** for complete architecture overview
+2. Review **`architecture-diagrams.md`** for interactive visual diagrams
+3. Use **`litellm-config-local-models.yaml`** as your configuration template
+4. Follow **`LOCAL-MODELS-CONFIG-README.md`** for deployment steps
+
+### For General Architecture
 1. Read the main architecture document: `llm-as-a-service-architecture.md`
 2. Review the architecture diagrams in `architecture-assets/`
 3. Follow the deployment checklist in the architecture document
 
 ## Architecture Diagrams
 
-- **High-level architecture**: System overview showing client services, LiteLLM, and vLLM backends
-- **Component details**: How LiteLLM and vLLM integrate
-- **OpenShift deployment**: Kubernetes resources and deployment structure
+### Interactive Diagrams (Mermaid)
+- **`architecture-diagrams.md`**: Contains 12+ interactive Mermaid diagrams including:
+  - High-level system architecture
+  - Component interaction flows
+  - Load balancing architecture
+  - OpenShift deployment structure
+  - Request flow diagrams
+  - Failover and resilience
+  - Network architecture
+  - And more...
+
+### Static Diagrams (PNG)
+- **`architecture-assets/`**: Contains PNG diagrams:
+  - High-level architecture
+  - Component details
+  - OpenShift deployment
 
 ## Research Sources
 
