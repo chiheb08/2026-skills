@@ -1,232 +1,255 @@
-# Helm Charts for Beginners (Kubernetes / OpenShift) — super simple
+# Helm Charts for Beginners (Kubernetes / OpenShift) — super simple + tutorial
 
-## 1) What Helm is (in plain language)
+## 1) What Helm is (plain language)
 
 Think of **Helm** as an “app installer” for Kubernetes.
 
-- Kubernetes runs your app using YAML files (Deployments, Services, etc.).
+- Kubernetes runs your app using YAML files (Deployment, Service, etc.).
 - A **Helm chart** is a **bundle** of those YAML files + a way to customize them.
 
 So instead of managing 15 YAML files by hand, you say:
-
 - “Install this chart”
 - “Use these settings (values)”
 
 ---
 
-## 2) What a Helm chart contains (structure)
+## 2) Chart structure (what’s inside)
 
-A typical chart looks like this:
+Here’s the typical folder structure:
 
-```
-mychart/
-  Chart.yaml
-  values.yaml
-  templates/
-    deployment.yaml
-    service.yaml
-    ingress.yaml   (or OpenShift Route)
-    configmap.yaml
-  charts/          (optional: dependencies)
-  templates/_helpers.tpl (optional: reusable template helpers)
-  .helmignore      (optional)
-```
+![](helm-assets/chart_structure.png)
 
-### The key files
-
-- **`Chart.yaml`**: chart metadata (name, version, description).
-- **`values.yaml`**: default configuration (image name, replicas, env vars, etc.).
-- **`templates/`**: Kubernetes YAML **templates**.
-  - They are not plain YAML; they contain placeholders like `{{ .Values.image.repository }}`.
-- **`charts/`**: optional folder for dependent charts.
+In simple terms:
+- **`Chart.yaml`**: chart name + version.
+- **`values.yaml`**: your settings (image, replicas, ports…).
+- **`templates/`**: YAML templates (they contain placeholders like `{{ .Values.replicaCount }}`).
 
 ---
 
-## 3) The Helm workflow (how people actually use it)
+## 3) The Helm workflow (the big picture)
 
-**Step A — You have a chart**
-You can get it from:
-- a Git repo (source code)
-- a Helm repository (like an “app store”)
-- an OCI registry (container registry that can also store charts)
+![](helm-assets/helm_workflow.png)
 
-**Step B — You choose your configuration (“values”)**
-You can customize a chart in two common ways:
+Your colleague said “compile a Helm chart” — Helm doesn’t compile like Java.
 
-1) **Edit a values file** (recommended):
+In Helm, “compile” usually means:
+- **render templates → produce final YAML**
 
-```yaml
-# my-values.yaml
-replicaCount: 2
-image:
-  repository: my-registry/my-app
-  tag: "1.2.3"
-```
-
-2) **Override with `--set`** (good for quick changes):
-
-```bash
-helm install myapp ./mychart --set replicaCount=2
-```
-
-**Step C — Helm renders templates into plain YAML**
-This is the part your colleague called “compile”.
-
-Helm doesn’t compile like Java/C++.
-It **renders** templates into final Kubernetes YAML.
-
-You can see the rendered result without installing:
+The command is:
 
 ```bash
 helm template myapp ./mychart -f my-values.yaml
 ```
 
-**Step D — Helm applies the YAML to the cluster**
-When you run install/upgrade, Helm sends the rendered YAML to the Kubernetes/OpenShift API:
+That prints the exact YAML that would be applied to the cluster.
+
+---
+
+## 4) Hands-on tutorial: create your own Helm chart
+
+We’ll create a tiny chart that deploys a container and exposes it.
+
+**Step 0 — Requirements**
+
+- Helm installed (`helm version`)
+- Access to a Kubernetes/OpenShift cluster
+- For OpenShift: `oc` installed (`oc version`) and login access
+
+**Step 1 — Create a starter chart**
 
 ```bash
-helm install myapp ./mychart -f my-values.yaml
-# later
-helm upgrade myapp ./mychart -f my-values.yaml
+mkdir -p helm-demo && cd helm-demo
+helm create hello-chart
 ```
 
-**Step E — Helm keeps “release state”**
-Helm stores the release information in the cluster (usually as Secrets) in the namespace.
-That’s what enables:
-- `helm list`
+This generates a chart with templates.
+
+**Step 2 — Open the important files**
+
+- `hello-chart/values.yaml` (your settings)
+- `hello-chart/templates/deployment.yaml`
+- `hello-chart/templates/service.yaml`
+
+**Step 3 — Configure the app you want to run**
+
+Edit `hello-chart/values.yaml` and set a real image. Example:
+
+```yaml
+replicaCount: 1
+
+image:
+  repository: nginx
+  tag: "1.25"
+
+service:
+  type: ClusterIP
+  port: 80
+```
+
+**Step 4 — Validate (lint)**
+
+```bash
+helm lint ./hello-chart
+```
+
+**Step 5 — Render (“compile”) to YAML locally (no cluster needed)**
+
+```bash
+helm template hello ./hello-chart
+```
+
+This is the best beginner trick:
+- If the YAML output looks wrong, fix templates/values before installing.
+
+---
+
+## 5) Deploy to OpenShift (very simple)
+
+**Step A — Login and choose a project**
+
+```bash
+oc login https://api.<cluster>:6443
+oc new-project hello-project
+# or
+oc project hello-project
+```
+
+**Step B — Install the chart into that namespace**
+
+```bash
+helm install hello ./hello-chart -n hello-project
+```
+
+Check:
+
+```bash
+helm list -n hello-project
+oc get all -n hello-project
+```
+
+**Step C — Upgrade (when you change values/templates)**
+
+```bash
+helm upgrade hello ./hello-chart -n hello-project
+```
+
+**Step D — Uninstall**
+
+```bash
+helm uninstall hello -n hello-project
+```
+
+---
+
+## 6) OpenShift routing: Ingress vs Route (beginner view)
+
+- Kubernetes often uses **Ingress**.
+- OpenShift commonly uses **Route**.
+
+So if your chart has `templates/ingress.yaml`, it might not be what your OpenShift cluster expects.
+
+Two easy approaches:
+
+- **Approach 1 (simple)**: keep using `Service` only (internal access) while learning.
+- **Approach 2 (more OpenShift)**: add a `Route` template.
+
+A very small Route template example (`hello-chart/templates/route.yaml`):
+
+```yaml
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: {{ include "hello-chart.fullname" . }}
+spec:
+  to:
+    kind: Service
+    name: {{ include "hello-chart.fullname" . }}
+  port:
+    targetPort: http
+```
+
+(Charts usually make this optional with a value like `route.enabled: true`.)
+
+---
+
+## 7) Where does Helm store things in the cluster?
+
+Important clarity:
+
+- You usually **don’t upload the chart** into the cluster as a “chart object”.
+- Helm:
+  1) reads chart files from your laptop/CI
+  2) renders YAML
+  3) applies YAML to the cluster
+  4) stores a **release record** in the namespace (often Secrets)
+
+That’s why you can do:
 - `helm history`
 - `helm rollback`
 
 ---
 
-## 4) Common commands (cheat sheet)
+## 8) How to store/share a chart (real-world)
 
-### Create a starter chart
-```bash
-helm create mychart
-```
+![](helm-assets/chart_storage_options.png)
 
-### Validate / lint the chart
-```bash
-helm lint ./mychart
-```
+**Option 1: Store the chart folder in Git (simplest)**
 
-### Render the chart ("compile") to YAML, no cluster needed
-```bash
-helm template myapp ./mychart -f my-values.yaml
-```
+Good for internal teams.
 
-### Install into the cluster
-```bash
-helm install myapp ./mychart -f my-values.yaml
-```
-
-### Upgrade
-```bash
-helm upgrade myapp ./mychart -f my-values.yaml
-```
-
-### Rollback
-```bash
-helm rollback myapp 1
-```
-
----
-
-## 5) “How do I get a Helm chart inside the OpenShift cluster?”
-
-Very important clarification:
-
-- You usually **don’t “upload the chart into the cluster”** as a permanent object.
-- What happens is:
-  1) Helm reads the chart **from your machine / CI runner**
-  2) Helm renders templates to YAML
-  3) Helm sends the YAML to the OpenShift API
-  4) The cluster stores the **release record** (so Helm can manage it later)
-
-So the practical question is really:
-
-> “How do I run `helm install` against my OpenShift cluster?”
-
-**A) Connect Helm to OpenShift**
-OpenShift is Kubernetes under the hood.
-Helm talks to it via your kubeconfig.
-
-Typical flow:
-
-1) Login:
-```bash
-oc login https://api.<cluster>:6443
-```
-
-2) Choose (or create) a project/namespace:
-```bash
-oc new-project my-project
-# or
-oc project my-project
-```
-
-3) Now Helm will use the same kubeconfig context:
-```bash
-helm install myapp ./mychart -n my-project -f my-values.yaml
-```
-
-**B) OpenShift specifics (what might break)**
-
-- **Ingress vs Route**:
-  - Kubernetes commonly uses `Ingress`.
-  - OpenShift often uses `Route`.
-  - Your chart may need to support Route templates (or support both).
-
-- **Security / permissions**:
-  - OpenShift can be stricter (Security Context Constraints).
-  - A chart that works on vanilla Kubernetes may fail on OpenShift if it needs privileged settings.
-
-- **ServiceAccount / RBAC**:
-  - Your chart may create Roles/RoleBindings.
-  - Make sure your user/CI has permission to create those objects.
-
-**C) “Where is the chart stored after install?”**
-
-- The chart package itself is not typically stored as a first-class object.
-- Helm stores **release metadata** (and the rendered manifest) in the namespace as Secrets/ConfigMaps.
-
----
-
-## 6) How teams deliver charts (real-world)
-
-**Option 1: Install from a folder in Git**
-Common in internal teams:
+- Put `charts/myapp/` in your repo
+- CI runs:
 
 ```bash
 helm upgrade --install myapp ./charts/myapp -n my-project -f values-prod.yaml
 ```
 
-**Option 2: Install from a Helm repo**
-Like an “app store”.
+**Option 2: Package it and publish to a Helm repo (classic)**
+
+Package:
 
 ```bash
-helm repo add bitnami https://charts.bitnami.com/bitnami
-helm repo update
-helm install myredis bitnami/redis -n my-project
+helm package ./hello-chart
+# creates something like hello-chart-0.1.0.tgz
 ```
 
-**Option 3: Install from an OCI registry**
-Store charts like container images.
+A “Helm repo” is basically:
+- the `.tgz` files
+- an `index.yaml`
+
+You can create the index:
 
 ```bash
-helm registry login my-registry
-helm pull oci://my-registry/charts/myapp --version 1.2.3
-helm install myapp oci://my-registry/charts/myapp -n my-project
+helm repo index .
+```
+
+Then host those files somewhere static (GitHub Pages, S3, Nexus/Artifactory).
+
+**Option 3: Push to an OCI registry (modern)**
+
+Charts can live in an OCI registry (similar to images).
+
+High-level flow:
+
+```bash
+helm package ./hello-chart
+helm registry login <registry>
+helm push hello-chart-0.1.0.tgz oci://<registry>/charts
+```
+
+Then install from the registry:
+
+```bash
+helm install hello oci://<registry>/charts/hello-chart -n hello-project
 ```
 
 ---
 
-## 7) The simplest mental model
+## 9) The simplest mental model
 
 - **Chart** = reusable app blueprint
 - **Values** = your configuration
-- **Template rendering (“compile”)** = chart → final YAML
+- **Render (“compile”)** = chart → final YAML
 - **Install** = apply YAML to cluster + store release info
 
-If you tell me what your colleague meant exactly by “get it inside the OpenShift cluster” (CI? chart repo? OpenShift UI?), I can add the exact recommended approach for your setup.
+If you tell me which OpenShift setup you use (CI/CD tool, registry, GitHub/GitLab), I can add the exact recommended “best practice” flow for your environment.
