@@ -1,0 +1,241 @@
+# ============================================
+# LiteLLM Production Configuration
+# For Locally Hosted Models Only (vLLM Backends)
+# OpenShift + On-Premise Datacenter
+# ============================================
+#
+# This configuration is optimized for:
+# - All models hosted locally in the cluster (vLLM)
+# - No external LLM providers
+# - Load balancing across multiple vLLM instances
+# - Production-grade performance and reliability
+#
+# ============================================
+
+model_list:
+  # ============================================
+  # Example Model 1: Llama 2 7B
+  # ============================================
+  - model_name: llama-2-7b
+    litellm_params:
+      model: openai/llama-2-7b  # Use 'openai/' prefix for vLLM compatibility
+      api_base: http://vllm-llama-2-7b-service.llm-service.svc.cluster.local:8000/v1
+      api_key: dummy-key  # vLLM doesn't require real API keys
+    rpm: 600  # Requests per minute limit
+    tpm: 50000  # Tokens per minute limit
+    model_info:
+      supported_environments: ["production"]
+      version: 1
+
+  # Load balancing: Second instance of Llama 2 7B
+  - model_name: llama-2-7b
+    litellm_params:
+      model: openai/llama-2-7b
+      api_base: http://vllm-llama-2-7b-service-2.llm-service.svc.cluster.local:8000/v1
+      api_key: dummy-key
+    rpm: 600
+    tpm: 50000
+
+  # ============================================
+  # Example Model 2: CodeLlama 13B
+  # ============================================
+  - model_name: codellama-13b
+    litellm_params:
+      model: openai/codellama-13b
+      api_base: http://vllm-codellama-13b-service.llm-service.svc.cluster.local:8000/v1
+      api_key: dummy-key
+    rpm: 400  # Lower RPM for larger model
+    tpm: 30000
+    model_info:
+      supported_environments: ["production"]
+      version: 1
+
+  # Load balancing: Second instance of CodeLlama 13B
+  - model_name: codellama-13b
+    litellm_params:
+      model: openai/codellama-13b
+      api_base: http://vllm-codellama-13b-service-2.llm-service.svc.cluster.local:8000/v1
+      api_key: dummy-key
+    rpm: 400
+    tpm: 30000
+
+  # ============================================
+  # Example Model 3: Mistral 7B
+  # ============================================
+  - model_name: mistral-7b
+    litellm_params:
+      model: openai/mistral-7b
+      api_base: http://vllm-mistral-7b-service.llm-service.svc.cluster.local:8000/v1
+      api_key: dummy-key
+    rpm: 800  # Higher RPM for smaller, faster model
+    tpm: 60000
+    model_info:
+      supported_environments: ["production"]
+      version: 1
+
+  # Load balancing: Second instance of Mistral 7B
+  - model_name: mistral-7b
+    litellm_params:
+      model: openai/mistral-7b
+      api_base: http://vllm-mistral-7b-service-2.llm-service.svc.cluster.local:8000/v1
+      api_key: dummy-key
+    rpm: 800
+    tpm: 60000
+
+  # ============================================
+  # Example Model 4: Llama 2 70B (Large Model)
+  # ============================================
+  - model_name: llama-2-70b
+    litellm_params:
+      model: openai/llama-2-70b
+      api_base: http://vllm-llama-2-70b-service.llm-service.svc.cluster.local:8000/v1
+      api_key: dummy-key
+    rpm: 100  # Lower RPM for very large model
+    tpm: 20000
+    model_info:
+      supported_environments: ["production"]
+      version: 1
+
+  # ============================================
+  # Example Model 5: Embedding Model (if using embeddings)
+  # ============================================
+  - model_name: bge-large-en
+    litellm_params:
+      model: openai/bge-large-en  # Embedding model
+      api_base: http://vllm-embeddings-service.llm-service.svc.cluster.local:8000/v1
+      api_key: dummy-key
+    rpm: 1000  # Embeddings are typically faster
+    tpm: 100000
+
+# ============================================
+# Router Settings
+# ============================================
+router_settings:
+  # Routing strategy: simple-shuffle is best for production performance
+  routing_strategy: simple-shuffle
+  # Options: simple-shuffle, least-busy, latency-based-routing, cost-based-routing
+  
+  # Retry configuration
+  num_retries: 2  # Retry failed requests 2 times
+  timeout: 30  # 30 second timeout per request
+  
+  # Redis configuration (REQUIRED for multi-instance LiteLLM deployments)
+  # Redis enables shared rate limiting and load balancing state across instances
+  redis_host: os.environ/REDIS_HOST
+  redis_port: os.environ/REDIS_PORT
+  redis_password: os.environ/REDIS_PASSWORD
+  # ⚠️ DO NOT use redis_url - it's 80 RPS slower
+  
+  # Model group aliases (optional: route old model names to new ones)
+  # model_group_alias:
+  #   "gpt-4": "llama-2-70b"  # Route 'gpt-4' requests to 'llama-2-70b'
+
+# ============================================
+# LiteLLM Module Settings
+# ============================================
+litellm_settings:
+  # Request timeout: Maximum time for a request (10 minutes)
+  request_timeout: 600
+  
+  # Retry configuration
+  num_retries: 3  # Retry up to 3 times on failure
+  
+  # Logging: Disable verbose logging in production
+  set_verbose: False
+  
+  # JSON logs for log aggregation systems (ELK, Splunk, etc.)
+  json_logs: true
+  
+  # Drop unsupported parameters instead of erroring
+  drop_params: True
+  
+  # ============================================
+  # Caching Configuration (Redis)
+  # ============================================
+  cache: true
+  cache_params:
+    type: redis
+    host: os.environ/REDIS_HOST
+    port: os.environ/REDIS_PORT
+    password: os.environ/REDIS_PASSWORD
+  
+  # ============================================
+  # Fallback Configuration
+  # ============================================
+  # If llama-2-70b fails, fallback to llama-2-7b
+  fallbacks:
+    - {"llama-2-70b": ["llama-2-7b"]}
+    - {"codellama-13b": ["llama-2-7b"]}
+  
+  # Context window fallbacks: if model runs out of context, use smaller model
+  context_window_fallbacks:
+    - {"llama-2-70b": ["llama-2-7b"]}
+    - {"codellama-13b": ["mistral-7b"]}
+  
+  # Cooldown: If a model fails > 3 times in 1 minute, cooldown for 1 minute
+  allowed_fails: 3
+
+# ============================================
+# General Settings
+# ============================================
+general_settings:
+  # Master key: Admin key for proxy management (must start with 'sk-')
+  # Store in OpenShift Secret: LITELLM_MASTER_KEY
+  master_key: os.environ/LITELLM_MASTER_KEY
+  
+  # Database connection: PostgreSQL for virtual keys and spend tracking
+  # Store in OpenShift Secret: DATABASE_URL
+  database_url: os.environ/DATABASE_URL
+  
+  # Database connection pool limit per worker process
+  # Formula: MAX_DB_CONNECTIONS / (instances × workers_per_instance)
+  # Example: 100 max connections, 3 instances, 4 workers each = 100/(3×4) = 8.33 → use 10
+  database_connection_pool_limit: 10
+  
+  # Database connection timeout (60 seconds)
+  database_connection_timeout: 60
+  
+  # Alerting: Slack webhooks for alerts
+  # Requires SLACK_WEBHOOK_URL environment variable
+  alerting: ["slack"]
+  
+  # Batch write spend updates every 60 seconds (reduces DB load)
+  proxy_batch_write_at: 60
+  
+  # Production optimizations
+  disable_error_logs: True  # Don't write LLM exceptions to DB (reduces DB load)
+  
+  # Allow requests even if DB is temporarily unavailable (VPC/on-premise only)
+  # ⚠️ Only enable if running in VPC without public internet access
+  allow_requests_on_db_unavailable: True
+  
+  # Use Redis transaction buffer for high traffic (1000+ RPS)
+  # Prevents database deadlocks under heavy load
+  use_redis_transaction_buffer: true
+
+# ============================================
+# Environment Variables Reference
+# ============================================
+# Required Environment Variables:
+#
+# Core:
+#   - LITELLM_MASTER_KEY=sk-... (from OpenShift Secret)
+#   - LITELLM_SALT_KEY=sk-... (from OpenShift Secret, cannot change after setup)
+#   - DATABASE_URL=postgresql://... (from OpenShift Secret)
+#   - LITELLM_MODE=PRODUCTION
+#
+# Redis:
+#   - REDIS_HOST=redis-service.redis.svc.cluster.local
+#   - REDIS_PORT=6379
+#   - REDIS_PASSWORD=... (from OpenShift Secret)
+#
+# Optional:
+#   - LITELLM_LOG=ERROR
+#   - SLACK_WEBHOOK_URL=https://hooks.slack.com/...
+#   - SEPARATE_HEALTH_APP=1
+#   - SEPARATE_HEALTH_PORT=8001
+#   - MAX_REQUESTS_BEFORE_RESTART=10000
+#   - NO_DOCS=True
+#   - NO_REDOC=True
+#
+# ============================================
