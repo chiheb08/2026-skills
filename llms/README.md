@@ -14,6 +14,9 @@ This folder contains the complete architecture and deployment guide for building
 - **`litellm-production-configuration-guide.md`**: Complete production configuration guide for OpenShift & on-premise
 - **`LOCAL-MODELS-CONFIG-README.md`**: Step-by-step guide for using the local models configuration
 
+### Deep Dives
+- **`redis-in-llm-apps-deep-dive.md`**: How Redis is used in modern LLM apps and specifically in LiteLLM (caching, rate limiting, load balancing, transaction buffer)
+
 ### Assets
 - **`architecture-assets/`**: Architecture diagrams (PNG files)
 
