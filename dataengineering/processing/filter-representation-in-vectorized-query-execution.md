@@ -172,7 +172,37 @@ Which one is faster depends on:
 
 ---
 
-## 8) 15-second recap
+## 8) How this connects to Spark / Databricks (JVM, Catalyst, Photon, adaptivity) — very simple
+
+You asked about these terms. They are “the bigger system” around the same idea (process data in batches and try hard not to waste work).
+
+### Diagram: simple view of the stack
+
+![](filter-representation-assets/spark_databricks_stack_simple.png)
+
+### Memory management (simple meaning)
+**Memory management** is how the system uses RAM so it doesn’t crash and doesn’t slow down.
+
+Relate to what we explained:
+- Your batch vectors (like the `amount` array) live in memory.
+- If you keep copying survivors into new arrays too often, you waste memory + time.
+- So engines prefer “keep the data, carry a small keep/ignore note” (SV/BM style thinking).
+
+In big data systems this also includes:\n+- deciding what stays in RAM vs what spills to disk\n+- avoiding creating too many temporary objects/arrays\n+
+### JVM (simple meaning)
+The **JVM** is the “machine” that runs Java/Scala code (Spark is mostly JVM-based).\n+
+Why it matters:\n+- The JVM allocates and frees memory for objects.\n+- Too many temporary objects (like lots of tiny arrays) can cause **garbage collection** pauses (the JVM stopping briefly to clean memory).\n+\n+Relate it back:\n+- Designs that reduce copying and reduce allocations can run smoother.\n+
+### Catalyst query optimizer (simple meaning)
+**Catalyst** is Spark’s “planner.”\n+\n+It takes your SQL / DataFrame operations and decides:\n+- the order of steps (filter first? join first?)\n+- which algorithms to use\n+\n+Relate it back:\n+- Catalyst tries to push filters earlier (so fewer rows survive later steps).\n+- That makes the “keep/ignore note” even more valuable, because you avoid doing work on rows that will be dropped.\n+
+### Photon (simple meaning)
+**Photon** (Databricks) is a faster execution engine that runs many operations in a very CPU-efficient way (often native code, very vectorized).\n+\n+Relate it back:\n+- Photon is exactly the kind of engine where “batch processing + vectorized operations” matters a lot.\n+- In that world, representing filters as bitmaps and using SIMD-friendly loops can be a big win for simple numeric operations.\n+
+### Runtime adaptivity / Dynamic query optimization (simple meaning)
+These mean:\n+\n+> “The system can change its plan while the query is running, based on what it learns.”\n+\n+Example:\n+- The optimizer *thought* a filter would keep 80% of rows, but at runtime it keeps only 2%.\n+- The engine may switch to a different join method, or change parallelism, or choose a different strategy.\n+\n+Relate it back:\n+- This paper’s message is “the best strategy depends on how many survive + what operation you do.”\n+- Runtime adaptivity is basically the system doing that reasoning automatically while running.\n+
+### Partition coalescing (simple meaning)
+A **partition** is just “a chunk of the data” processed in parallel.\n+\n+**Partition coalescing** means:\n+\n+> “If we have too many tiny partitions, merge them into fewer bigger ones.”\n+\n+Why?\n+- Too many tiny tasks adds overhead (scheduling, setup time).\n+\n+Relate it back:\n+- It’s the same theme as vectorization:\n+  - don’t do work one-by-one (too much overhead)\n+  - do work in sensible-sized chunks (batches / partitions)\n+
+---
+
+## 9) 15-second recap
 
 - Databases often process data in small groups.
 - After a filter, some rows are rejected.
