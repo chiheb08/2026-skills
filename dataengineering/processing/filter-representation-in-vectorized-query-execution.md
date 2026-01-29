@@ -1,22 +1,30 @@
 # Suggested Medium titles (pick one)
 
-1) **Stop Copying Rows: The Simple Trick Behind Fast Databases (SV vs Bitmaps)**
-2) **How Databases Go Fast: A “Keep/Ignore Note” That Saves Tons of Work**
-3) **Selection Vectors vs Bitmaps — Explained Like You’re New to IT**
+1) **Stop Copying Rows: The “Keep/Ignore Note” Behind Fast Databases (SV vs Bitmaps)**
+2) **How Databases Go Fast (Without Magic): Selection Vectors vs Bitmaps**
+3) **Vectorized Execution Explained for Beginners: The Filter Trick That Saves CPU**
 
 ---
 
-# Stop Copying Rows: The Simple Trick Behind Fast Databases (SV vs Bitmaps)
+# Stop Copying Rows: The “Keep/Ignore Note” Behind Fast Databases (SV vs Bitmaps)
 
-If you’re new to IT, databases can sound like magic.
+Picture this:
 
-Here’s the non-magic version:
+You run a query on a huge table.
+It finishes in seconds.
 
-> Fast databases often avoid copying data. Instead, they keep data in place and carry a tiny “keep/ignore note” through the pipeline.
+Your brain says: “Wow, that database must be doing something genius.”
 
-That “keep/ignore note” is what the research paper **“Filter Representation in Vectorized Query Execution” (Ngom et al., 2021)** is about.
+The truth is often simpler:
 
-This article explains the idea with simple examples, diagrams, and a small cheat-sheet.
+> Fast engines avoid doing the same heavy work again and again.
+> Especially: they try to avoid copying data around.
+
+This article explains one surprisingly powerful idea from the research paper **“Filter Representation in Vectorized Query Execution” (Ngom et al., 2021)**:
+
+> Instead of physically removing rows after every filter, engines keep data in place and carry a small **keep/ignore note**.
+
+That keep/ignore note is called a **filter representation**.
 
 ---
 
@@ -32,15 +40,30 @@ A **filter representation** is just a way to remember:
 
 - **Row**: one record (example: one order).
 - **Batch**: a small group of rows processed together (example: 1,000 rows).
-- **Pipeline**: multiple steps in a row (scan → filter → compute → sum).
+- **Pipeline**: steps in a row (scan → filter → compute → sum).
 - **Filter**: a rule that keeps some rows and rejects others.
-- **Filter representation**: the “keep/ignore note” attached to the batch.
+- **Filter representation**: the keep/ignore note attached to a batch.
+
+---
+
+## Why databases process in batches (vectorized execution)
+
+Computers pay a cost every time they “start doing something.”
+If you do work one row at a time, you pay that start-cost a lot.
+
+So many analytics engines do this instead:
+- grab a **batch** (like 1,000 rows)
+- loop over it in a tight, predictable way
+
+### Diagram: row-at-a-time vs batch-at-a-time
+
+![](filter-representation-assets/row_vs_batch.png)
 
 ---
 
 ## The big picture (architecture)
 
-A vectorized database processes **batches** through operators (think: stations on a factory line).
+A vectorized database processes batches through operators (think: stations on a factory line).
 
 ### Diagram: batch + filter flows through the pipeline
 
@@ -48,28 +71,31 @@ A vectorized database processes **batches** through operators (think: stations o
 
 Important idea:
 - The batch values (columns) can stay in memory.
-- The “keep/ignore note” changes as you apply filters.
+- The keep/ignore note changes as you apply filters.
 
 ---
 
-## Why does this exist? (the purpose)
+## Why this filter thing exists (the purpose)
 
 When you filter data, you have two choices.
 
-### Option A: Copy only the survivors
-You build a new output batch containing only the rows that passed.
+### Option A: Copy only survivors
+You build a new output batch containing only rows that passed.
 
-This is simple, but copying again and again is expensive.
+This is simple, but copying again and again can be expensive.
 
-### Option B: Don’t copy. Keep the batch and carry a keep/ignore note
-You keep the values in place.
-You only update the note that says which positions are valid.
+### Option B: Don’t copy; keep the batch and carry a keep/ignore note
+You keep the values where they are.
+You only update the small note that says which positions are valid.
 
-That note is the filter representation.
+### Diagram: why copying can be expensive
 
-### Diagram: copy vs mask
+![](filter-representation-assets/why_copying_is_expensive.png)
 
-![](filter-representation-assets/copy_vs_mask.png)
+This is the mindset shift:
+
+- Copying moves lots of data.
+- Updating a small note moves very little.
 
 ---
 
@@ -93,19 +119,19 @@ Survivors are positions: **1, 3, 4, 7**
 
 ---
 
-## Two ways to write the same keep/ignore note
+## Two ways to write the keep/ignore note
 
 Both options mean the same thing (“keep 1,3,4,7”), they’re just stored differently.
 
-### 1) Selection Vector (SV) = list of good positions
+### 1) Selection Vector (SV) = list of survivor positions
 
 - `SV = [1, 3, 4, 7]`
 
 How to read it:
 - “Only look at rows number 1, then 3, then 4, then 7.”
 
-Analogy:
-- a list of seat numbers of people who passed security.
+Real-life analogy:
+- a guest list of seat numbers for people allowed inside.
 
 ### 2) Bitmap (BM) = 0/1 flags for each position
 
@@ -114,8 +140,8 @@ Analogy:
 How to read it:
 - “At each position: 1 means keep it, 0 means ignore it.”
 
-Analogy:
-- light switches: ON = keep, OFF = ignore.
+Real-life analogy:
+- a row of light switches (ON = keep, OFF = ignore).
 
 ---
 
@@ -132,10 +158,10 @@ WHERE amount > 100
 GROUP BY country;
 ```
 
-What happens (conceptually):
+Conceptually:
 
 1) **Scan**: read columns in batches (`amount[]`, `country[]`).
-2) **Filter**: apply `amount > 100` → update the keep/ignore note (SV or BM).
+2) **Filter**: apply `amount > 100` → update keep/ignore note (SV or BM).
 3) **Compute**: calculate `amount * 1.2` for valid rows.
 4) **Aggregate**: group by `country`, sum values for valid rows.
 
@@ -152,14 +178,14 @@ Example: `amount * 1.2`.
 
 There are two styles:
 
-### Style A: Compute only on survivors (often good with SV)
+### Style A: Compute only survivors (often pairs well with SV)
 If only a few rows survived, don’t waste time computing the rest.
 
-### Style B: Compute on everything, then ignore bad rows (often good with BM)
+### Style B: Compute everything, then ignore bad rows (often pairs well with BM)
 This can be faster when:
 - most rows survived, and
 - the work is simple math,
-- the computer can do it in a very tight loop.
+- the computer can run a very tight loop efficiently.
 
 ---
 
@@ -169,77 +195,99 @@ This can be faster when:
 
 ![](filter-representation-assets/sv_vs_bm_decision_flow.png)
 
-Or if you prefer a table:
+Or a table:
 
 | If… | Usually choose… | Why |
 |---|---|---|
-| Only a few rows survive | SV | You touch only the survivors |
-| Most rows survive and work is simple math | BM | Scanning everything can be very efficient |
-| Work is complicated/irregular (strings, complex logic) | SV | Less overhead than dealing with many flags |
+| Only a few rows survive | SV | Touch only survivors |
+| Most rows survive and work is simple numeric (math/compare) | BM | Scanning everything can be very efficient |
+| Work is complicated/irregular (strings, complex logic) | SV | Less overhead than many flags |
 
 ---
 
-## How this connects to Spark / Databricks (JVM, Catalyst, Photon, adaptivity)
+## Real-world connection: Spark / Databricks (simple)
 
-These words sound scary, but they are the “bigger system” around the same theme:
+Spark and Databricks are big systems, but they chase the same goal:
 
-> Reduce wasted work, process in chunks, and use CPU + memory efficiently.
+> Do less wasted work, move less data, and use CPU/memory efficiently.
 
 ### Diagram: simple view of the stack
 
 ![](filter-representation-assets/spark_databricks_stack_simple.png)
 
-### Memory management (simple meaning)
+### Memory management
 Memory management is how the system uses RAM so it doesn’t crash and doesn’t slow down.
 
 Link to our story:
-- Copying lots of data creates lots of extra memory work.
-- Keeping data in place and carrying a small keep/ignore note reduces that.
+- lots of copying → lots of memory work
+- keeping data in place → less memory work
 
-### JVM (simple meaning)
-The JVM is the “engine” that runs Java/Scala code (Spark is mostly JVM-based).
+### Catalyst optimizer (Spark)
+Catalyst is Spark’s “planner.”
 
-Why it matters:
-- creating lots of temporary objects can cause cleanup pauses
+It tries to pick a plan that makes the runtime cheaper, like:
+- pushing filters early
+- simplifying expressions
 
-### Catalyst query optimizer (simple meaning)
-Catalyst is Spark’s planner.
+### Photon (Databricks)
+Photon is an execution engine that is very good at running batch-style operations efficiently.
 
-It decides a good way to run your query (example: push filters earlier so fewer rows survive later steps).
+This connects directly to the paper’s world: vectorized execution loves predictable loops.
 
-### Photon (simple meaning)
-Photon (Databricks) is a faster execution engine that is very good at batch processing and CPU-efficient loops.
+### Runtime adaptivity / dynamic query optimization
+Meaning:
 
-### Runtime adaptivity / dynamic query optimization (simple meaning)
-It means:
-
-> The system can change its plan while running, based on what it learns from the data.
+> The system can change its plan while running, based on what it learns.
 
 Example:
-- It expected a filter would keep 80% of rows, but it keeps only 2%.
-- It can switch strategies to match reality.
+- the planner expects 80% of rows survive
+- at runtime only 2% survive
+- the engine switches strategies to match reality
 
-### Partition coalescing (simple meaning)
+### Partition coalescing
 A partition is a chunk of data processed in parallel.
 
-Partition coalescing means:
+Coalescing means:
+- too many tiny chunks → merge into fewer, bigger chunks
 
-> If we have too many tiny chunks, merge them into fewer bigger chunks.
+It’s the same principle as batching:
+- fewer tiny tasks → less overhead
 
-This is the same idea as vectorization:
-- avoid doing work in tiny pieces (too much overhead)
-- do work in sensible-sized chunks
+---
+
+## Common beginner confusions (quick fixes)
+
+### “Why not just delete the bad rows?”
+Because deleting/copying all the time costs work.
+It’s often cheaper to leave data where it is and just remember “ignore these positions.”
+
+### “Is SV always better?”
+No. If most rows survive and the next step is simple math, BM + full scan can be faster.
+
+### “Is BM always better?”
+No. For irregular work (strings, complex rules), SV can be simpler and faster.
+
+---
+
+## A tiny checklist you can use in real projects
+
+If you’re tuning a Spark/Databricks job or any analytics pipeline:
+
+- **Are you copying/shuffling data a lot?** (often expensive)
+- **Can you filter earlier?** (reduce wasted work)
+- **Is your work simple numeric or complex/branchy?** (impacts what optimizations help)
+- **Are you doing too many tiny tasks?** (coalesce/adjust partitioning)
 
 ---
 
 ## Conclusion
 
-If you only remember one thing from this paper:
+If you only remember one thing:
 
-- Fast systems often don’t “delete rows” or “copy survivors” at every step.
-- They keep data in place and carry a small **keep/ignore note**.
+- Fast engines often don’t copy data after every filter.
+- They keep batches in place and carry a small keep/ignore note.
 - That note can be a **Selection Vector (list of survivors)** or a **Bitmap (0/1 flags)**.
 
-And the deeper lesson (useful beyond databases):
+And the broader lesson:
 
-> Performance is often about reducing overhead and matching how the computer likes to work: in chunks, with predictable loops, and with minimal copying.
+> Performance is often about reducing overhead and reducing unnecessary movement of data.
