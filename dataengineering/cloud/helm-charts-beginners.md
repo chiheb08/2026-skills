@@ -109,3 +109,7 @@ helm install myapp ./mychart -n my-project -f my-values.yaml
 - **Git repo**: simplest (CI installs from a folder)
 - **Helm repo**: package `.tgz` + `index.yaml` and host it
 - **OCI registry**: store charts in a registry (like images)
+
+---
+
+## 7) Your case: JFrog (Artifactory) + OpenShift (simple call flow)\n+\n+If your charts live in **JFrog Artifactory**, the key point is:\n+\n+- **Your laptop/CI pulls the chart from JFrog**\n+- Helm renders YAML locally\n+- Helm applies YAML to the OpenShift API\n+- **Cluster nodes pull container images**, not the Helm chart\n+\n+Diagram:\n+\n+![](helm-assets/jfrog_helm_openshift_callflow.png)

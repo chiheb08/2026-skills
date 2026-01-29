@@ -185,3 +185,83 @@ helm install hello oci://<registry>/charts/hello-chart -n hello-project
 - Render (“compile”) = blueprint → final YAML
 - Install/upgrade = apply YAML to OpenShift
 - Store/share = Git or Helm repo or OCI registry
+
+---
+
+## 11) Your case: JFrog (Artifactory) + OpenShift — every call, step by step
+
+The most common misunderstanding:
+
+**The OpenShift cluster usually does NOT pull the Helm chart.**
+
+What really happens:
+- **Your laptop / CI runner** pulls the chart from **JFrog**.
+- Helm renders templates into final YAML (“compile”).
+- Helm sends that YAML to the **OpenShift API**.
+- The cluster creates Pods, and the **nodes pull container images** from an image registry (not the chart).
+
+### Diagram: who talks to who
+
+![](helm-assets/jfrog_helm_openshift_callflow.png)
+
+### The calls (in order)
+
+**0) Login to OpenShift**
+
+```bash
+oc login https://api.<cluster>:6443
+oc project hello-project
+```
+
+**1) Get the chart from JFrog (two common ways)**
+
+**A) If JFrog is a Helm repo**
+
+```bash
+helm repo add myjfrog https://<jfrog>/artifactory/api/helm/<helm-repo>
+helm repo update
+helm search repo myjfrog
+```
+
+Then install by name:
+
+```bash
+helm upgrade --install hello myjfrog/hello-chart -n hello-project -f values-prod.yaml
+```
+
+**B) If JFrog is an OCI registry**
+
+```bash
+helm registry login <jfrog>
+helm pull oci://<jfrog>/<oci-repo>/hello-chart --version 0.1.0
+```
+
+Then install from OCI:
+
+```bash
+helm upgrade --install hello oci://<jfrog>/<oci-repo>/hello-chart -n hello-project -f values-prod.yaml
+```
+
+**2) Render (“compile”) happens locally**
+
+Helm renders templates locally (CI/laptop):
+
+```bash
+helm template hello ./hello-chart
+```
+
+(If installing from a repo/OCI, Helm does the same rendering step internally before applying.)
+
+**3) Apply YAML to the OpenShift API**
+
+This happens when you run:
+
+```bash
+helm install hello ... -n hello-project
+# or
+helm upgrade --install hello ... -n hello-project
+```
+
+**4) Cluster pulls container images**
+
+Then the cluster creates Pods. The nodes pull the **container image** (e.g., `nginx:1.25` or your app image) from your image registry.
