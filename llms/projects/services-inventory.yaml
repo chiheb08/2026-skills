@@ -1,0 +1,118 @@
+# Central LLM Platform — Services Inventory (machine-readable)
+# On-prem OpenShift, LiteLLM + vLLM + PostgreSQL + Redis
+
+namespaces:
+  - name: llm-platform
+    purpose: LiteLLM proxy and vLLM backends
+  - name: llm-data
+    purpose: PostgreSQL and Redis
+  - name: rag
+    purpose: RAG consumer application
+  - name: code-support
+    purpose: Code support consumer application
+  - name: translate
+    purpose: Translate tool consumer application
+
+consumer_apps:
+  - name: rag-app
+    namespace: rag
+    port: 8080
+    calls: litellm-service
+    env:
+      - LITELLM_BASE_URL
+      - LITELLM_API_KEY
+  - name: code-support-app
+    namespace: code-support
+    port: 8080
+    calls: litellm-service
+    env:
+      - LITELLM_BASE_URL
+      - LITELLM_API_KEY
+  - name: translate-app
+    namespace: translate
+    port: 8080
+    calls: litellm-service
+    env:
+      - LITELLM_BASE_URL
+      - LITELLM_API_KEY
+
+gateway:
+  - name: litellm-service
+    namespace: llm-platform
+    deployment: litellm-proxy
+    port: 4000
+    replicas: 3
+    calls:
+      - vllm-llama-2-7b-service
+      - vllm-codellama-13b-service
+      - vllm-mistral-7b-service
+      - vllm-llama-2-70b-service
+      - vllm-embeddings-service
+      - postgres
+      - redis
+    config: litellm-config
+    secrets:
+      - litellm-secrets
+      - redis-secrets
+
+vllm_backends:
+  - name: vllm-llama-2-7b-service
+    namespace: llm-platform
+    deployment: vllm-llama-2-7b
+    port: 8000
+    replicas: 2
+    model: llama-2-7b
+  - name: vllm-codellama-13b-service
+    namespace: llm-platform
+    deployment: vllm-codellama-13b
+    port: 8000
+    replicas: 2
+    model: codellama-13b
+  - name: vllm-mistral-7b-service
+    namespace: llm-platform
+    deployment: vllm-mistral-7b
+    port: 8000
+    replicas: 2
+    model: mistral-7b
+  - name: vllm-llama-2-70b-service
+    namespace: llm-platform
+    deployment: vllm-llama-2-70b
+    port: 8000
+    replicas: 1
+    model: llama-2-70b
+  - name: vllm-embeddings-service
+    namespace: llm-platform
+    deployment: vllm-embeddings
+    port: 8000
+    replicas: 1
+    model: embeddings
+
+data_layer:
+  - name: postgres
+    namespace: llm-data
+    port: 5432
+    purpose: keys, teams, users, spend
+    used_by: litellm-service
+  - name: redis
+    namespace: llm-data
+    port: 6379
+    purpose: cache, rate limits, load-balancing state
+    used_by: litellm-service
+
+communication_matrix:
+  - source: consumer_apps
+    target: litellm-service
+    protocol: HTTP/HTTPS
+    port: 4000
+  - source: litellm-service
+    target: vllm_backends
+    protocol: HTTP
+    port: 8000
+  - source: litellm-service
+    target: postgres
+    protocol: TCP
+    port: 5432
+  - source: litellm-service
+    target: redis
+    protocol: TCP
+    port: 6379
