@@ -4,6 +4,8 @@
 
 This document describes **technical challenges** that arise when using LiteLLM’s data layer in production: **PostgreSQL** (keys, teams, users, spend) and **Redis** (cache, rate limiting, load-balancing state, transaction buffer). It covers root causes, mitigations, and operational practices.
 
+For **definitions** of **teams** and **spend** (what they are, how they are stored and used in PostgreSQL), see [litellm-postgres-teams-and-spend.md](./litellm-postgres-teams-and-spend.md).
+
 ---
 
 ## Table of Contents
@@ -434,6 +436,7 @@ LiteLLM exposes Prometheus metrics for the buffer and lock:
 - LiteLLM: [Configuration](https://docs.litellm.ai/docs/proxy/configs)
 - Repo: [LiteLLM Production Configuration Guide](./litellm-production-configuration-guide.md)
 - Repo: [Redis in LLM Apps Deep Dive](./redis-in-llm-apps-deep-dive.md)
+- Repo: [LiteLLM PostgreSQL: Teams and Spend (definitions)](./litellm-postgres-teams-and-spend.md)
 
 ---
 

@@ -17,6 +17,7 @@ This folder contains the complete architecture and deployment guide for building
 ### Deep Dives
 - **`redis-in-llm-apps-deep-dive.md`**: How Redis is used in modern LLM apps and specifically in LiteLLM (caching, rate limiting, load balancing, transaction buffer)
 - **`litellm-data-layer-technical-challenges.md`**: Technical challenges of the data layer with LiteLLM (PostgreSQL, Redis, deadlocks, connection pools, migrations, encryption)
+- **`litellm-postgres-teams-and-spend.md`**: Definitions of Teams and Spend in LiteLLM + PostgreSQL (what they are, how they are stored and used)
 
 ### Assets
 - **`architecture-assets/`**: Architecture diagrams (PNG files)
