@@ -9,6 +9,9 @@ This folder contains the complete architecture and deployment guide for building
 - **`litellm-local-models-architecture.md`**: Detailed architecture guide for locally hosted models (vLLM only)
 - **`architecture-diagrams.md`**: Interactive Mermaid diagrams for all architecture components
 
+### Infrastructure Sizing
+- **`infrastructure-sizing-700-1500-users.md`**: GPU (H200), CPU, and RAM requirements for 700–1500 users on-premise (vLLM, LiteLLM, PostgreSQL, Redis, OpenShift node layout)
+
 ### Configuration Files
 - **`litellm-config-local-models.yaml`**: Production-ready configuration for locally hosted models
 - **`litellm-production-configuration-guide.md`**: Complete production configuration guide for OpenShift & on-premise
@@ -18,6 +21,7 @@ This folder contains the complete architecture and deployment guide for building
 - **`redis-in-llm-apps-deep-dive.md`**: How Redis is used in modern LLM apps and specifically in LiteLLM (caching, rate limiting, load balancing, transaction buffer)
 - **`litellm-data-layer-technical-challenges.md`**: Technical challenges of the data layer with LiteLLM (PostgreSQL, Redis, deadlocks, connection pools, migrations, encryption)
 - **`litellm-postgres-teams-and-spend.md`**: Definitions of Teams and Spend in LiteLLM + PostgreSQL (what they are, how they are stored and used)
+- **`litellm-teams-spend-architecture.md`**: Complete architecture diagrams and explanation of Teams & Spend tracking in on-premise infrastructure (with virtual budgets, chargeback, resource governance)
 
 ### Assets
 - **`architecture-assets/`**: Architecture diagrams (PNG files)
