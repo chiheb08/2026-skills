@@ -8,6 +8,7 @@ This folder contains the complete architecture and deployment guide for building
 - **`llm-as-a-service-architecture.md`**: Main architecture document with comprehensive technical details
 - **`litellm-local-models-architecture.md`**: Detailed architecture guide for locally hosted models (vLLM only)
 - **`architecture-diagrams.md`**: Interactive Mermaid diagrams for all architecture components
+- **`production-best-practices.md`**: Best practices for a consistent, maintainable, long-lived platform (lifecycle, scaling, config, multi-app, observability, security, HA/DR, change management, runbooks, governance)
 
 ### Infrastructure Sizing
 - **`infrastructure-sizing-700-1500-users.md`**: GPU (H200), CPU, and RAM requirements for 700–1500 users on-premise (vLLM, LiteLLM, PostgreSQL, Redis, OpenShift node layout)
