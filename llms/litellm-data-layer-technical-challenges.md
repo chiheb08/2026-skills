@@ -39,21 +39,143 @@ For **definitions** of **teams** and **spend** (what they are, how they are stor
 - Default pool size (e.g. 10 per worker) is easy to overlook until you hit the limit.
 - Other services may share the same PostgreSQL, so the “available” connections for LiteLLM are less than `max_connections`.
 
-**Mitigation**
+---
 
-1. **Size the pool explicitly**
-   - Formula:  
-     `database_connection_pool_limit = MAX_DB_CONNECTIONS_AVAILABLE / (instances × workers_per_instance)`
-   - Reserve headroom for admin, migrations, and other apps.
-   - Example: 100 max, 3 instances × 4 workers → 100/12 ≈ 8 → set **8 or 10** in config.
+#### Connection pool formula — simple explanation
 
+**Idea in one sentence:** PostgreSQL has a **fixed number of “slots”** (connections). Every LiteLLM **worker** can open up to **pool_limit** connections. So **total possible connections = (number of workers) × (pool limit per worker)**. That total must stay **below** the number of slots PostgreSQL allows for LiteLLM.
+
+**Step 1 — What is a “worker”?**
+
+- LiteLLM runs with several **workers** (e.g. `--num_workers 4`). Each worker is a process that handles requests.
+- You run several **pods** (instances). So:
+  - **Total workers** = **number of pods** × **workers per pod**
+
+**Step 2 — How many connections can they use?**
+
+- Each worker has its **own** connection pool: it can open up to **database_connection_pool_limit** connections to PostgreSQL (e.g. 10).
+- So in the **worst case**, every worker uses all its pool slots:
+  - **Total connections** = **total workers** × **database_connection_pool_limit**
+
+**Step 3 — The cap**
+
+- PostgreSQL has a setting **max_connections** (e.g. 100). Other apps (admin, migrations, other services) may use some of those. So for LiteLLM you only have **MAX_DB_CONNECTIONS_AVAILABLE** (e.g. 80).
+- You must ensure:  
+  **Total connections ≤ MAX_DB_CONNECTIONS_AVAILABLE**
+
+So:
+
+- **Total connections** = `instances × workers_per_instance × database_connection_pool_limit`
+- So: `instances × workers_per_instance × database_connection_pool_limit ≤ MAX_DB_CONNECTIONS_AVAILABLE`
+- Therefore:  
+  **database_connection_pool_limit** = **MAX_DB_CONNECTIONS_AVAILABLE** ÷ **(instances × workers_per_instance)**
+
+You **divide** the available connections by the number of workers so that, when every worker uses its full pool, you still stay under the limit.
+
+---
+
+#### Diagram 1: Where the connections come from
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│  LiteLLM (3 pods, 4 workers per pod → 12 workers total)                     │
+│                                                                             │
+│  Pod 1                    Pod 2                    Pod 3                    │
+│  ┌──────────────────┐    ┌──────────────────┐    ┌──────────────────┐     │
+│  │ Worker 1 ────────┼───►│                  │    │                  │     │
+│  │ Worker 2 ────────┼───►│  (same shape     │    │  (same shape     │     │
+│  │ Worker 3 ────────┼───►│   as Pod 1)      │    │   as Pod 1)      │     │
+│  │ Worker 4 ────────┼───►│                  │    │                  │     │
+│  └────────┬────────┘    └────────┬────────┘    └────────┬────────┘     │
+│           │                      │                      │               │
+│           │  Each worker has its own pool                │               │
+│           │  of connections (up to pool_limit each)       │               │
+│           ▼                      ▼                      ▼               │
+└───────────┼──────────────────────┼──────────────────────┼───────────────┘
+            │                      │                      │
+            │   4 workers          │   4 workers          │   4 workers
+            │   × pool_limit       │   × pool_limit       │   × pool_limit
+            │   = 4×8 = 32         │   = 32               │   = 32
+            │                      │                      │
+            └──────────────────────┴──────────────────────┘
+                                   │
+                    Total = 12 workers × 8 = 96 connections (max)
+                                   │
+                                   ▼
+            ┌──────────────────────────────────────────────┐
+            │  PostgreSQL                                    │
+            │  max_connections = 100                        │
+            │  "Slots" for LiteLLM = 96 (must be ≤ 100)     │
+            │  Reserve 4 for admin / other apps            │
+            └──────────────────────────────────────────────┘
+```
+
+So: **12 workers × 8 = 96**. If PostgreSQL allows 100 connections and you reserve 4 for others, 96 ≤ 96 is OK. If you had set **pool_limit = 10**, you’d get 12 × 10 = **120 > 100** → “too many clients already”.
+
+---
+
+#### Diagram 2: How to choose pool_limit (the formula in pictures)
+
+```
+  PostgreSQL allows (for LiteLLM)     You have this many workers
+  MAX_DB_CONNECTIONS_AVAILABLE       = instances × workers_per_instance
+
+            ┌─────────────┐                    ┌─────────────┐
+            │     80      │                    │     12      │
+            │  (example)  │                    │  (3 pods × 4)│
+            └──────┬──────┘                    └──────┬──────┘
+                   │                                  │
+                   │     Divide available slots       │
+                   │     by number of workers         │
+                   │                                  │
+                   ▼                                  ▼
+            ┌─────────────┐                    pool_limit per worker
+            │  80 ÷ 12    │  ──────────────►   = 6 or 7 (round down to
+            │  ≈ 6.67     │                    be safe; or use 8 if
+            └─────────────┘                    you reserve less)
+```
+
+**Formula:**
+
+```
+database_connection_pool_limit  =  MAX_DB_CONNECTIONS_AVAILABLE  ÷  (instances × workers_per_instance)
+```
+
+**Sanity check:** After you set it, always verify:
+
+```
+(instances × workers_per_instance × database_connection_pool_limit)  ≤  MAX_DB_CONNECTIONS_AVAILABLE
+```
+
+---
+
+#### Worked example
+
+| Step | What you have | Value |
+|------|----------------|-------|
+| 1 | PostgreSQL `max_connections` | 100 |
+| 2 | Connections reserved for admin, migrations, other apps | 20 |
+| 3 | **MAX_DB_CONNECTIONS_AVAILABLE** for LiteLLM | 100 − 20 = **80** |
+| 4 | Number of LiteLLM pods (instances) | 3 |
+| 5 | Workers per pod (e.g. `--num_workers 4`) | 4 |
+| 6 | **Total workers** | 3 × 4 = **12** |
+| 7 | **Pool limit per worker** | 80 ÷ 12 ≈ 6.67 → use **6** (round down to stay under the limit) |
+
+**Check:** 12 × 6 = **72 ≤ 80** ✓
+
+If you used **10** per worker (default): 12 × 10 = **120 > 80** → risk of “too many clients already”.
+
+---
+
+#### Mitigation (config and load reduction)
+
+1. **Set the pool size explicitly** using the formula above; leave headroom for admin and other apps.
 2. **Set in config**
    ```yaml
    general_settings:
-     database_connection_pool_limit: 10   # per worker
+     database_connection_pool_limit: 10   # per worker (use value from formula)
      database_connection_timeout: 60      # seconds
    ```
-
 3. **Reduce DB write load**
    - Use **Redis transaction buffer** at high RPS (see [§3](#3-transaction-buffer-redis--postgresql)).
    - Set `disable_error_logs: true` to avoid writing LLM exceptions to the DB.
