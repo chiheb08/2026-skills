@@ -12,6 +12,7 @@ This folder contains the complete architecture and deployment guide for building
 
 ### Infrastructure Sizing
 - **`infrastructure-sizing-700-1500-users.md`**: GPU (H200), CPU, and RAM requirements for 700–1500 users on-premise (vLLM, LiteLLM, PostgreSQL, Redis, OpenShift node layout)
+- **`data-layer-resource-requirements.md`**: Resource parameters and values only for PostgreSQL and Redis (by user tier: 700, 1000, 1500 users) — copy-paste into YAML
 - **`model-storage-and-replicas-explained.md`**: Where models are stored (PV/PVC), what “replicas” mean (one model in storage, multiple vLLM instances in memory), and how pods load models into GPU VRAM
 
 ### Configuration Files
