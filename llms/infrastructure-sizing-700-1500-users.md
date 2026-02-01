@@ -8,12 +8,13 @@ This document provides infrastructure resource requirements for serving **700 to
 
 1. [Assumptions and Methodology](#1-assumptions-and-methodology)
 2. [NVIDIA H200 Quick Reference](#2-nvidia-h200-quick-reference)
-3. [Sizing Summary by Tier](#3-sizing-summary-by-tier)
-4. [Component-Level Resources](#4-component-level-resources)
-5. [OpenShift Node Layout](#5-openshift-node-layout)
-6. [Capacity and Headroom](#6-capacity-and-headroom)
-7. [Configuration Tuning](#7-configuration-tuning)
-8. [References](#8-references)
+3. [Technical Terms Explained (GPU & Infrastructure Basics)](#3-technical-terms-explained-gpu--infrastructure-basics)
+4. [Sizing Summary by Tier](#4-sizing-summary-by-tier)
+5. [Component-Level Resources](#5-component-level-resources)
+6. [OpenShift Node Layout](#6-openshift-node-layout)
+7. [Capacity and Headroom](#7-capacity-and-headroom)
+8. [Configuration Tuning](#8-configuration-tuning)
+9. [References](#9-references)
 
 ---
 
@@ -69,9 +70,95 @@ This document provides infrastructure resource requirements for serving **700 to
 
 ---
 
-## 3. Sizing Summary by Tier
+## 3. Technical Terms Explained (GPU & Infrastructure Basics)
 
-### 3.1 Tier 1: ~700 Users
+If you are new to GPUs or infrastructure sizing, this section explains the technical terms used in this document in plain language.
+
+### 3.1 GPU Memory
+
+- **VRAM (Video RAM)**  
+  The GPU’s own memory. It is separate from your server’s main RAM (system memory). All model weights and working data for inference must fit in VRAM. When we say “141 GB H200”, we mean 141 GB of VRAM on that GPU.
+
+- **HBM3e (High Bandwidth Memory 3 extended)**  
+  The type of memory used on the H200. “High bandwidth” means data can move in and out of this memory very quickly. HBM is built in stacks next to the GPU chip (not as normal RAM sticks). **HBM3e** is a recent, fast generation of this technology. More bandwidth (e.g. 4.8 TB/s) means the GPU can feed itself data faster and run LLM inference more efficiently.
+
+- **Memory bandwidth (e.g. 4.8 TB/s)**  
+  How much data can be read from or written to GPU memory per second (here, 4.8 terabytes per second). For large models, this often matters as much as raw compute. Higher bandwidth = less time waiting for data = higher throughput.
+
+### 3.2 Compute and Performance
+
+- **TFLOPS (TeraFLOPS)**  
+  “Trillion floating-point operations per second.” A measure of how many math operations the GPU can do per second. Higher TFLOPS = more compute power. For LLMs, both compute and memory bandwidth matter.
+
+- **FP8 / Tensor cores**  
+  **FP8** = 8-bit floating-point: a compact number format that uses less memory and can be computed faster than full precision (FP32). **Tensor cores** are parts of the GPU optimized for the kind of matrix math used in neural networks. “FP8 Tensor” performance (e.g. ~3,958 TFLOPS on H200) is the rate when using this fast, AI-oriented path.
+
+- **7B / 13B / 70B (model size)**  
+  The “B” stands for **billions of parameters**. Parameters are the learned numbers (weights) that define the model. A 7B model has about 7 billion parameters (~14 GB in FP16). Bigger models are usually more capable but need more VRAM and compute.
+
+- **Model weights**  
+  The stored parameters of the trained neural network (the “model file”). They must be loaded into GPU VRAM before inference. Size in GB ≈ (parameters × 2) for FP16, e.g. 7B ≈ 14 GB, 70B ≈ 140 GB.
+
+### 3.3 LLM Inference Concepts
+
+- **KV cache (Key-Value cache)**  
+  During text generation, the model reuses previous computations. The **KV cache** stores these intermediate results in VRAM so it doesn’t recompute them for every new token. The more concurrent requests (and the longer the context), the more KV cache you need. **Concurrency is often limited by available VRAM for the KV cache**, not only by model weight size.
+
+- **Tensor parallelism (TP)**  
+  Splitting a single model across **multiple GPUs** so that each GPU holds part of the model and they work together on each request. E.g. “TP=2” means one logical model run on 2 GPUs. Used when the model is too large or when you want higher throughput than a single GPU can give.
+
+- **Replica**  
+  A separate copy of the same service (e.g. the same vLLM model running on another GPU). More replicas = more concurrent requests you can handle (and better availability). “2 replicas of 7B” = two GPUs each running the 7B model.
+
+- **Concurrency**  
+  How many requests are being processed at the same time (e.g. 100 concurrent requests = 100 generations in progress). Sizing is driven by peak concurrency and how much KV cache each request needs.
+
+- **Throughput (req/s, tokens/s)**  
+  **req/s** = requests per second (completed responses). **tokens/s** = tokens generated per second across all requests. Higher throughput means the system can serve more users or heavier use.
+
+- **Embeddings**  
+  A different kind of model that turns text into fixed-size vectors (lists of numbers) for search, RAG, or similarity. Usually smaller and lighter than chat models; often one GPU can serve both embeddings and a small chat model, or embeddings alone at high throughput.
+
+### 3.4 Infrastructure and Sizing
+
+- **vCPU (virtual CPU)**  
+  A share of a physical CPU core. In virtual machines or containers, “8 vCPU” means the workload can use up to 8 CPU cores’ worth of compute. Used to size LiteLLM, PostgreSQL, Redis, and node capacity.
+
+- **Gi / GiB (gibibyte)**  
+   Gi = GiB = 1,024³ bytes (~1.074 GB). Commonly used for RAM, VRAM, and storage in technical specs. “16 Gi RAM” = 16 gibibytes of memory.
+
+- **RPS (requests per second)**  
+  Number of API requests (e.g. chat completions) the system handles per second. Used to dimension the gateway and backends.
+
+- **RPM / TPM**  
+  **RPM** = requests per minute; **TPM** = tokens per minute. Used for rate limiting (e.g. per user or per API key).
+
+- **Node**  
+  A single physical or virtual server in the cluster. “GPU node” = server with GPUs; “worker node” = server used for CPU workloads (LiteLLM, DB, Redis, etc.).
+
+- **Pod**  
+  The smallest deployable unit in Kubernetes/OpenShift: one or more containers sharing network and storage. One vLLM “replica” typically = one pod with one GPU.
+
+- **HA (High Availability)**  
+  Design so that if one instance fails, others take over. E.g. multiple LiteLLM replicas, Redis Sentinel, or PostgreSQL failover.
+
+- **HPA (Horizontal Pod Autoscaler)**  
+  A Kubernetes/OpenShift mechanism that adds or removes pod replicas based on CPU, memory, or custom metrics (e.g. RPS).
+
+- **ReadWriteMany (RWX)**  
+  A storage access mode where the same volume can be mounted by **many pods at once** (read and write). Used for shared model weights so multiple vLLM pods can load the same model without duplicating it per pod.
+
+- **NVMe**  
+  A fast interface for SSDs. “SSD/NVMe” in this doc means fast disk for databases and caches, to avoid I/O becoming a bottleneck.
+
+- **SXM (H200 SXM)**  
+  NVIDIA’s module form factor for datacenter GPUs: the GPU is on a board that plugs into a special socket (with NVLink), rather than a PCIe card. SXM variants often have slightly higher power and performance than PCIe (NVL) versions.
+
+---
+
+## 4. Sizing Summary by Tier
+
+### 4.1 Tier 1: ~700 Users
 
 | Resource | Quantity | Notes |
 |----------|----------|--------|
@@ -84,7 +171,7 @@ This document provides infrastructure resource requirements for serving **700 to
 | **Total CPU (platform)** | 16 vCPU | LiteLLM + PG + Redis |
 | **Total RAM (platform)** | 48 Gi | LiteLLM + PG + Redis |
 
-### 3.2 Tier 2: ~1000 Users
+### 4.2 Tier 2: ~1000 Users
 
 | Resource | Quantity | Notes |
 |----------|----------|--------|
@@ -97,7 +184,7 @@ This document provides infrastructure resource requirements for serving **700 to
 | **Total CPU (platform)** | 28 vCPU | |
 | **Total RAM (platform)** | 88 Gi | |
 
-### 3.3 Tier 3: ~1500 Users
+### 4.3 Tier 3: ~1500 Users
 
 | Resource | Quantity | Notes |
 |----------|----------|--------|
@@ -110,7 +197,7 @@ This document provides infrastructure resource requirements for serving **700 to
 | **Total CPU (platform)** | 32 vCPU | |
 | **Total RAM (platform)** | 96 Gi | |
 
-### 3.4 One-Page Overview
+### 4.4 One-Page Overview
 
 | Component | 700 users | 1000 users | 1500 users |
 |-----------|-----------|------------|------------|
@@ -124,9 +211,9 @@ This document provides infrastructure resource requirements for serving **700 to
 
 ---
 
-## 4. Component-Level Resources
+## 5. Component-Level Resources
 
-### 4.1 vLLM Inference (H200)
+### 5.1 vLLM Inference (H200)
 
 Sizing is driven by **concurrent requests per model** and **throughput per GPU**.
 
@@ -174,7 +261,7 @@ resources:
 
 ---
 
-### 4.2 LiteLLM Gateway (CPU)
+### 5.2 LiteLLM Gateway (CPU)
 
 - **Role**: Auth, routing, rate limiting, spend checks, Redis/PostgreSQL access.
 - **Bottleneck**: CPU and connection handling, not GPU.
@@ -193,7 +280,7 @@ resources:
 
 ---
 
-### 4.3 PostgreSQL
+### 5.3 PostgreSQL
 
 - **Role**: Virtual keys, teams, users, spend logs, metadata.
 - **Load**: Reads (key/team validation, spend checks cached in Redis); writes (spend logs, batched).
@@ -214,7 +301,7 @@ Example: 4 replicas × 4 workers × 10 = 160. Set `max_connections` in PostgreSQ
 
 ---
 
-### 4.4 Redis
+### 5.4 Redis
 
 - **Role**: Rate limits (RPM/TPM), cache, load-balancing state, transaction buffer for spend writes.
 - **Version**: 7.0+.
@@ -231,14 +318,14 @@ Example: 4 replicas × 4 workers × 10 = 160. Set `max_connections` in PostgreSQ
 
 ---
 
-## 5. OpenShift Node Layout
+## 6. OpenShift Node Layout
 
-### 5.1 Node Roles
+### 6.1 Node Roles
 
 - **GPU nodes**: vLLM pods only (H200).
 - **CPU nodes**: LiteLLM, PostgreSQL, Redis, and other platform services.
 
-### 5.2 Example: 700-User Tier
+### 6.2 Example: 700-User Tier
 
 | Node type | Count | vCPU | RAM | GPU | Purpose |
 |-----------|-------|------|-----|-----|--------|
@@ -249,7 +336,7 @@ Example: 4 replicas × 4 workers × 10 = 160. Set `max_connections` in PostgreSQ
 - **Total CPU**: 96–128 vCPU (GPU nodes) + 64–96 vCPU (workers) = 160–224 vCPU (includes OS and overhead).
 - Platform (LiteLLM + PG + Redis) uses a small fraction; rest for OpenShift, monitoring, ingress.
 
-### 5.3 Example: 1500-User Tier
+### 6.3 Example: 1500-User Tier
 
 | Node type | Count | vCPU | RAM | GPU | Purpose |
 |-----------|-------|------|-----|-----|--------|
@@ -258,7 +345,7 @@ Example: 4 replicas × 4 workers × 10 = 160. Set `max_connections` in PostgreSQ
 
 - **Total H200**: 14–18.
 
-### 5.4 Diagram (Logical)
+### 6.4 Diagram (Logical)
 
 ```
                     ┌─────────────────────────────────────────────────────────┐
@@ -282,7 +369,7 @@ Example: 4 replicas × 4 workers × 10 = 160. Set `max_connections` in PostgreSQ
 
 ---
 
-## 6. Capacity and Headroom
+## 7. Capacity and Headroom
 
 - **Target**: Support peak concurrent users and RPS with ~20–30% headroom.
 - **GPU headroom**: Extra H200(s) allow more concurrent 70B or 7B requests; add 1–2 GPUs per tier if you expect growth.
@@ -292,29 +379,29 @@ Example: 4 replicas × 4 workers × 10 = 160. Set `max_connections` in PostgreSQ
 
 ---
 
-## 7. Configuration Tuning
+## 8. Configuration Tuning
 
-### 7.1 vLLM (per model)
+### 8.1 vLLM (per model)
 
 - **max_model_len**: Lower (e.g. 4096) increases concurrency; 8192 is a good default.
 - **gpu_memory_utilization**: 0.90–0.95 to maximize KV cache on H200.
 - **max_num_seqs**: 128–256; tune per model and context length.
 
-### 7.2 LiteLLM
+### 8.2 LiteLLM
 
 - **Redis**: Use `redis_host`, `redis_port`, `redis_password` (not `redis_url`).
 - **use_redis_transaction_buffer**: `true` to batch spend writes and reduce DB load.
 - **Workers**: `--num_workers $(nproc)` or equal to vCPU per pod.
 - **proxy_batch_write_at**: e.g. 60 (seconds) to batch DB writes.
 
-### 7.3 PostgreSQL
+### 8.3 PostgreSQL
 
 - **Connection pool**: `MAX_DB_CONNECTIONS / (replicas × workers)` per worker.
 - **Shared_buffers**: e.g. 25% of RAM for dedicated DB node.
 
 ---
 
-## 8. References
+## 9. References
 
 - [LiteLLM production practices](https://docs.litellm.ai/docs/proxy/prod)
 - [vLLM parallelism and scaling](https://docs.vllm.ai/en/stable/serving/parallelism_scaling.html)
