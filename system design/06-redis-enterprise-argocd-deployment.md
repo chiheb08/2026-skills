@@ -264,6 +264,80 @@ kubectl get events -n NAMESPACE --sort-by='.lastTimestamp'
 
 ---
 
+### 6.2 Operator and REC in the same namespace — what to do next
+
+If the **operator and REC are already in the same namespace** but you still see "object has been modified", "rec-0 not found", or "Waiting for first pod to bootstrap", follow this checklist.
+
+**Step 1 — Stop Argo CD from fighting the operator (object modified)**
+
+1. Add **ignoreDifferences** to your Argo CD Application for the REC (see YAML above in 6.1). That stops Argo CD from overwriting the operator’s changes to the REC.
+2. Optionally **turn off auto-sync** for the Redis Enterprise app temporarily (Argo CD → your app → App Details → disable "Auto-Sync"). You can sync once manually after fixing things, then turn auto-sync back on.
+
+**Step 2 — See why `rec-0` isn’t starting (same namespace)**
+
+Run these in the **namespace where both the operator and REC live** (replace `YOUR_NS` with that namespace, e.g. `redis-enterprise` or `bai32-baipi-gateway-baipi-gateway-dev`):
+
+```bash
+export NS=YOUR_NS
+
+# 1) REC, StatefulSet, Pods, PVCs
+kubectl get rec,sts,pods,pvc -n $NS
+
+# 2) Events (image pull, scheduling, PVC, OOM)
+kubectl get events -n $NS --sort-by='.lastTimestamp' | tail -50
+
+# 3) If rec-0 exists but isn’t ready
+kubectl describe pod rec-0 -n $NS
+
+# 4) If the StatefulSet exists but no pods
+kubectl describe sts rec -n $NS
+```
+
+**What to look for:**
+
+| Symptom | Likely cause | Fix |
+|--------|---------------|-----|
+| No StatefulSet `rec` | Operator didn’t create it (conflict or REC not admitted). | Ensure ignoreDifferences is set; sync once and check operator logs. |
+| StatefulSet exists, no pods | Pods not scheduled or not created. | Check `kubectl get events` for FailedScheduling, and `kubectl describe sts rec` for template/volumes. |
+| PVC stuck in Pending | Storage class missing or quota. | Create/default StorageClass, or set `persistentSpec.storageClassName` in the REC to an existing class; check quotas. |
+| ImagePullBackOff | Image not found or pull secret missing. | REC uses Red Hat registry (`registry.connect.redhat.com/redislabs/...`). Create an image pull secret for Red Hat (or your registry) and add `spec.pullSecrets` to the REC. |
+| CrashLoopBackOff / OOMKilled | Not enough memory or CPU. | Increase `redisEnterpriseNodeResources` in the REC (e.g. requests/limits memory ≥ 4Gi, cpu ≥ 2). |
+| OpenShift: pod blocked by security | Security context / SCC. | Grant the Redis Enterprise SCC to the REC’s service account, or use the operator’s recommended SCC (see Redis Enterprise OpenShift docs). |
+
+**Step 3 — OpenShift: Red Hat images and pull secret**
+
+If you use the Red Hat registry (`registry.connect.redhat.com/redislabs/...`), ensure the namespace has a pull secret so the REC pods can pull images:
+
+```bash
+# Create pull secret (replace with your Red Hat registry credentials)
+kubectl create secret docker-registry redhat-pull-secret \
+  --docker-server=registry.connect.redhat.com \
+  --docker-username=YOUR_REDHAT_USER \
+  --docker-password=YOUR_REDHAT_PASSWORD \
+  -n $NS
+
+# Add to default service account (or the REC’s service account)
+kubectl patch serviceaccount default -n $NS -p '{"imagePullSecrets":[{"name":"redhat-pull-secret"}]}'
+```
+
+If the REC uses a dedicated service account, add the same `imagePullSecrets` to that account, or set `spec.pullSecrets` in the REC to `[{ "name": "redhat-pull-secret" }]`.
+
+**Step 4 — One-time: let the operator settle**
+
+1. Pause or disable auto-sync for the Redis Enterprise app.
+2. Apply the REC once from Git (or leave it as-is if it already exists).
+3. Add ignoreDifferences for the REC (status, and spec if the operator mutates it).
+4. Wait for the operator to create the StatefulSet and for `rec-0` to become Ready (fix PVC/image/resources from Step 2 if needed).
+5. Re-enable auto-sync or sync manually; then create the REDB (sync wave 1) if you use it.
+
+**Quick recap (same namespace):**
+
+1. Add **ignoreDifferences** for REC `.status` (and optionally `.spec`) on the Application.  
+2. Run the **kubectl** commands above in the shared namespace and fix PVC / image pull / resources / SCC.  
+3. Optionally **disable auto-sync** until REC is healthy, then sync again.
+
+---
+
 ## 5. Summary
 
 | Topic | What to do |
@@ -273,5 +347,6 @@ kubectl get events -n NAMESPACE --sort-by='.lastTimestamp'
 | **Example files** | Use `redis-enterprise-argocd-example/rec.yaml`, `redb.yaml`, and `application.yaml`; set namespace and repo URL/path to your environment. |
 | **Admission webhook "rec" not found** | Use sync waves (REC wave 0, REDB wave 1); ensure Argo CD destination namespace is `redis-enterprise` (same as operator); sync twice if REDB fails until REC is ready. See [Section 6](#6-troubleshooting-admission-webhook-rec-not-found). |
 | **"Object has been modified" / "rec-0 not found" / "Waiting for first pod to bootstrap"** | Add Argo CD `ignoreDifferences` for REC `.status`; ensure REC namespace matches operator namespace; check StatefulSet/pods/PVC/events so `rec-0` can start. See [Section 6.1](#61-object-has-been-modified-and-pod-rec-0-not-found--waiting-for-first-pod-to-bootstrap). |
+| **Operator and REC in same namespace but still failing** | Follow [Section 6.2](#62-operator-and-rec-in-the-same-namespace--what-to-do-next): add ignoreDifferences, disable auto-sync temporarily, run the kubectl checklist (REC/STS/pods/PVC/events), fix PVC/image pull/resources/SCC, then re-sync. |
 
 Using the correct resource names and the same namespace as the operator (with RBAC in place for Argo CD) resolves the “cannot create resource in api group app.redislabs.com” error and lets Argo CD deploy REC and REDB from Git.
