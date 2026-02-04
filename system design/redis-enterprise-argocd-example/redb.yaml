@@ -7,6 +7,8 @@ kind: RedisEnterpriseDatabase
 metadata:
   name: my-redb
   namespace: redis-enterprise
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
 spec:
   redisEnterpriseCluster:
     name: my-rec

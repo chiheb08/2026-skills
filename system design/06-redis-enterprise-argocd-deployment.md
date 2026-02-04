@@ -11,6 +11,7 @@ You got an error like: **cannot create resource "redisenterprise" in API group "
 3. [Steps to Deploy Redis Enterprise with Argo CD](#3-steps-to-deploy-redis-enterprise-with-argocd)
 4. [Example Files and Git Repo Layout](#4-example-files-and-git-repo-layout)
 5. [Summary](#5-summary)
+6. [Troubleshooting: Admission Webhook "rec" Not Found](#6-troubleshooting-admission-webhook-rec-not-found)
 
 ---
 
@@ -190,6 +191,35 @@ After pushing these files to Git, create the Application in Argo CD (UI or `kube
 
 ---
 
+## 6. Troubleshooting: Admission Webhook "rec" Not Found
+
+**Error:** Sync fails with:
+
+```text
+admission webhook "redisenterprise.admission.redislabs" denied the request: failed to get RedisEnterpriseCluster client: custom resource (RedisEnterpriseCluster) not found: redisenterpriseclusters.app.redislabs.com "rec" not found
+```
+
+**Cause:** The admission webhook validates the **REDB** (RedisEnterpriseDatabase) by looking up the **REC** (RedisEnterpriseCluster) it references (`spec.redisEnterpriseCluster.name`). If the REC does not exist yet (or is in a different namespace), the webhook denies the request.
+
+**Fixes:**
+
+| Fix | What to do |
+|-----|------------|
+| **1. Apply REC before REDB (sync order)** | Argo CD may apply resources in an order where REDB is created before REC. Use **sync waves** so REC is applied first, then REDB: add `argocd.argoproj.io/sync-wave: "0"` to the REC metadata and `argocd.argoproj.io/sync-wave: "1"` to the REDB metadata. The example files `redis-enterprise-all-in-one.yaml` and `redb.yaml` include these annotations. |
+| **2. Same namespace** | REC and REDB must be in the **same namespace** as each other and as the Redis Enterprise operator. In Argo CD, set **Destination → Namespace** to that namespace (e.g. `redis-enterprise`). If your Application syncs to a different namespace (e.g. `bai32-baipi-gat...`), the REC may be created there but the operator (and webhook) may be looking in `redis-enterprise` — or the REC name may not match. Use **one** namespace for operator, REC, and REDB. |
+| **3. Sync twice** | After adding sync waves, sync the Application. If REDB still fails (e.g. REC is not “ready” yet), wait for the REC to become ready (`kubectl get rec -n redis-enterprise`), then sync again so REDB is created after the REC exists and is admitted. |
+| **4. Check REC name** | The REDB’s `spec.redisEnterpriseCluster.name` must match the REC’s `metadata.name` exactly (e.g. `rec` or `my-rec`). If your REC is named `my-rec`, the REDB must reference `my-rec`, not `rec`. |
+
+**Quick check:**
+
+```bash
+# REC must exist in the same namespace as REDB
+kubectl get rec -n redis-enterprise
+# Ensure the name matches what the REDB references (e.g. rec or my-rec)
+```
+
+---
+
 ## 5. Summary
 
 | Topic | What to do |
@@ -197,5 +227,6 @@ After pushing these files to Git, create the Application in Argo CD (UI or `kube
 | **"Cannot create resource" error** | Use **`RedisEnterpriseCluster`** or **`RedisEnterpriseDatabase`** (correct kind); ensure operator is installed; create REC/REDB in the **same namespace** as the operator (or fix RBAC/webhook). |
 | **Deploy with Argo CD** | (1) Install operator (Helm) once. (2) Put REC and REDB YAML in Git. (3) Create Argo CD Application pointing at that repo/path. (4) Sync. |
 | **Example files** | Use `redis-enterprise-argocd-example/rec.yaml`, `redb.yaml`, and `application.yaml`; set namespace and repo URL/path to your environment. |
+| **Admission webhook "rec" not found** | Use sync waves (REC wave 0, REDB wave 1); ensure Argo CD destination namespace is `redis-enterprise` (same as operator); sync twice if REDB fails until REC is ready. See [Section 6](#6-troubleshooting-admission-webhook-rec-not-found). |
 
 Using the correct resource names and the same namespace as the operator (with RBAC in place for Argo CD) resolves the “cannot create resource in api group app.redislabs.com” error and lets Argo CD deploy REC and REDB from Git.

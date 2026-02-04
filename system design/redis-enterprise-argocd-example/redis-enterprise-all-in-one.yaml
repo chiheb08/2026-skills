@@ -1,5 +1,6 @@
 # Redis Enterprise — REC + REDB in one manifest file
 # Deploy: kubectl apply -f redis-enterprise-all-in-one.yaml
+# Argo CD: REC is applied first (wave 0), REDB second (wave 1) so the admission webhook finds the REC.
 # Prerequisites: Redis Enterprise operator installed in namespace redis-enterprise.
 # REC and REDB must be in the SAME namespace as the operator.
 ---
@@ -8,6 +9,8 @@ kind: RedisEnterpriseCluster
 metadata:
   name: rec
   namespace: redis-enterprise
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
 spec:
   nodes: 3
   persistentSpec:
@@ -36,6 +39,8 @@ kind: RedisEnterpriseDatabase
 metadata:
   name: my-redb
   namespace: redis-enterprise
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
 spec:
   redisEnterpriseCluster:
     name: rec
