@@ -1,0 +1,26 @@
+{{- if .Values.redb.enabled }}
+apiVersion: app.redislabs.com/v1alpha1
+kind: RedisEnterpriseDatabase
+metadata:
+  name: {{ .Values.redb.name }}
+  namespace: {{ .Values.namespace }}
+  labels:
+    app.kubernetes.io/name: redis-enterprise
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+spec:
+  redisEnterpriseCluster:
+    name: {{ .Values.redb.redisEnterpriseClusterName }}
+  memorySize: {{ .Values.redb.memorySize }}
+  shardCount: {{ .Values.redb.shardCount }}
+  replication: {{ .Values.redb.replication }}
+  {{- if .Values.redb.persistence }}
+  persistence: {{ .Values.redb.persistence }}
+  {{- end }}
+  {{- if .Values.redb.evictionPolicy }}
+  evictionPolicy: {{ .Values.redb.evictionPolicy }}
+  {{- end }}
+  {{- if .Values.redb.databaseSecretName }}
+  databaseSecretName: {{ .Values.redb.databaseSecretName }}
+  {{- end }}
+{{- end }}

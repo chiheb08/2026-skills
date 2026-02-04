@@ -1,0 +1,14 @@
+apiVersion: v2
+name: redis-enterprise
+description: Helm chart for Redis Enterprise Cluster (REC) and Redis Enterprise Database (REDB) — deploys REC and REDB custom resources for the Redis Enterprise operator.
+type: application
+version: 0.1.0
+appVersion: "7.8"
+keywords:
+  - redis
+  - redis-enterprise
+  - rec
+  - redb
+maintainers:
+  - name: Your Team
+    email: team@example.com

@@ -1,0 +1,50 @@
+# Default values for redis-enterprise chart (REC + REDB).
+# Deploy in the SAME namespace as the Redis Enterprise operator.
+
+# Namespace where REC and REDB will be created (must match operator namespace to avoid "cannot create resource" errors).
+namespace: redis-enterprise
+
+# Redis Enterprise Cluster (REC)
+rec:
+  # REC metadata.name — cannot be changed after creation.
+  name: my-rec
+  # Number of Redis Enterprise nodes (minimum 3).
+  nodes: 3
+  # Persistent storage for REC nodes.
+  persistentSpec:
+    enabled: true
+    volumeSize: 20Gi
+    # storageClassName: ""   # omit to use cluster default
+  # CPU/memory per node.
+  redisEnterpriseNodeResources:
+    requests:
+      cpu: "2"
+      memory: "4Gi"
+    limits:
+      cpu: "2"
+      memory: "4Gi"
+  # Optional: secret for cluster admin credentials (key username, password).
+  # clusterCredentialSecretName: ""
+  # Optional: secret for Redis Enterprise license (key license).
+  # licenseSecretName: ""
+
+# Redis Enterprise Database (REDB)
+redb:
+  # Set to false to deploy only REC (no database).
+  enabled: true
+  # REDB metadata.name.
+  name: my-redb
+  # spec.redisEnterpriseCluster.name — must match rec.name.
+  redisEnterpriseClusterName: my-rec
+  # Memory for the database (e.g. 256MB, 1GB).
+  memorySize: 256MB
+  # Number of shards.
+  shardCount: 1
+  # Enable replication (replica per shard) for HA.
+  replication: false
+  # Optional: persistence (disabled | aofEverySecond | snapshotEvery1Hour | etc.).
+  # persistence: ""
+  # Optional: eviction policy (e.g. allkeys-lru, noeviction).
+  # evictionPolicy: ""
+  # Optional: secret for database password (key password).
+  # databaseSecretName: ""

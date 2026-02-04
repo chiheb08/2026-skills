@@ -1,0 +1,30 @@
+apiVersion: app.redislabs.com/v1
+kind: RedisEnterpriseCluster
+metadata:
+  name: {{ .Values.rec.name }}
+  namespace: {{ .Values.namespace }}
+  labels:
+    app.kubernetes.io/name: redis-enterprise
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+spec:
+  nodes: {{ .Values.rec.nodes }}
+  persistentSpec:
+    enabled: {{ .Values.rec.persistentSpec.enabled }}
+    volumeSize: {{ .Values.rec.persistentSpec.volumeSize }}
+    {{- if .Values.rec.persistentSpec.storageClassName }}
+    storageClassName: {{ .Values.rec.persistentSpec.storageClassName }}
+    {{- end }}
+  redisEnterpriseNodeResources:
+    requests:
+      cpu: {{ .Values.rec.redisEnterpriseNodeResources.requests.cpu | quote }}
+      memory: {{ .Values.rec.redisEnterpriseNodeResources.requests.memory | quote }}
+    limits:
+      cpu: {{ .Values.rec.redisEnterpriseNodeResources.limits.cpu | quote }}
+      memory: {{ .Values.rec.redisEnterpriseNodeResources.limits.memory | quote }}
+  {{- if .Values.rec.clusterCredentialSecretName }}
+  clusterCredentialSecretName: {{ .Values.rec.clusterCredentialSecretName }}
+  {{- end }}
+  {{- if .Values.rec.licenseSecretName }}
+  licenseSecretName: {{ .Values.rec.licenseSecretName }}
+  {{- end }}

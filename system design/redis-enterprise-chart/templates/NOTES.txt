@@ -1,0 +1,13 @@
+Redis Enterprise (REC + REDB) has been deployed.
+
+  REC:  {{ .Values.rec.name }} ({{ .Values.rec.nodes }} nodes)
+  REDB: {{ .Values.redb.name }} (if enabled)
+
+Ensure the Redis Enterprise operator is installed in namespace: {{ .Values.namespace }}
+
+To connect to the database, use the Service created by the operator for the REDB:
+  Host: {{ .Values.redb.name }}
+  Port: 6379 (default)
+
+Get the password (if auth is enabled):
+  kubectl get secret -n {{ .Values.namespace }} -l app=redis-enterprise -o name
