@@ -12,6 +12,7 @@ This document explains how to deploy the **Redis Enterprise operator** (on Kuber
 4. [Most Important Variables](#4-most-important-variables)
 5. [After the Operator Is Installed](#5-after-the-operator-is-installed)
 6. [Summary](#6-summary)
+7. [Junior-Friendly: What Are REC and REDB? Diagrams and Examples](#7-junior-friendly-what-are-rec-and-redb-diagrams-and-examples)
 
 ---
 
@@ -302,3 +303,236 @@ After you apply the REDB, the operator creates a **Kubernetes Service** for the 
 | **REDB (database)** | `redisEnterpriseCluster.name`, `memorySize`, `shardCount`, `replication`, `persistence`, `evictionPolicy`, optional `databaseSecretName` and `modulesList`. |
 
 For full option lists and advanced topics (LDAP, backup, Active-Active, etc.), use the official [REC API reference](https://redis.io/docs/latest/operate/kubernetes/reference/api/redis_enterprise_cluster_api/) and [REDB API reference](https://redis.io/docs/latest/operate/kubernetes/reference/api/redis_enterprise_database_api/).
+
+---
+
+## 7. Junior-Friendly: What Are REC and REDB? Diagrams and Examples
+
+If you are used to deploying **simple applications** with manifest files (Deployment + Service), this section explains how **operator-based deployment** is different and what **REC** and **REDB** really are.
+
+### 7.1 How you deploy a simple app (what you already know)
+
+With a simple app, you write **one or two YAML files**: a **Deployment** (to run your pods) and a **Service** (so other pods can reach your app). You run `kubectl apply -f ...` and Kubernetes creates the Pods and the Service. Your app is then reachable at something like `http://my-app:8080`.
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│  SIMPLE APP DEPLOYMENT (manifest-based)                                │
+├─────────────────────────────────────────────────────────────────────────┤
+│                                                                         │
+│   You write:                    Kubernetes creates:                     │
+│   ┌─────────────────┐           ┌─────────────────┐                    │
+│   │ deployment.yaml │  apply   │  Pod  Pod  Pod  │                    │
+│   │ (replicas: 3)   │ ───────►  │  (your app)     │                    │
+│   └─────────────────┘           └────────┬────────┘                    │
+│   ┌─────────────────┐                    │                             │
+│   │ service.yaml    │  apply   ┌────────▼────────┐                    │
+│   │ (ClusterIP)     │ ───────► │     Service      │ ◄── other apps    │
+│   └─────────────────┘           │  my-app:8080     │     connect here  │
+│                                  └──────────────────┘                    │
+│                                                                         │
+└─────────────────────────────────────────────────────────────────────────┘
+```
+
+So: **you describe exactly what you want (Pods + Service), and Kubernetes creates exactly that.**
+
+---
+
+### 7.2 How deployment with the operator is different
+
+With the **Redis Enterprise operator**, you **do not** write a Deployment or StatefulSet for Redis. Instead you write **two kinds of “intent” manifests**:
+
+1. **REC (Redis Enterprise Cluster)** — “I want a Redis Enterprise **cluster** with this many nodes and this much storage.”
+2. **REDB (Redis Enterprise Database)** — “I want a **Redis database** on that cluster with this much memory and these options.”
+
+The **operator** (a controller running in the cluster) **watches** these manifests. When it sees a REC, it creates the real cluster (StatefulSet, Pods, Services, PVCs, etc.). When it sees a REDB, it creates the database on that cluster and exposes it via a **Service**. So: **you describe what you want at a high level; the operator creates all the low-level resources.**
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│  OPERATOR-BASED DEPLOYMENT (Redis Enterprise)                           │
+├─────────────────────────────────────────────────────────────────────────┤
+│                                                                         │
+│   You write:                    Operator creates (you don't write):     │
+│   ┌─────────────────┐           ┌─────────────────────────────────┐   │
+│   │   rec.yaml      │  apply    │  StatefulSet, Pods, PVCs,         │   │
+│   │   (REC manifest)│ ───────►  │  Services for the cluster        │   │
+│   └─────────────────┘           └─────────────────────────────────┘   │
+│            │                                    ▲                       │
+│            │                                    │ operator               │
+│            ▼                                    │ watches REC            │
+│   ┌─────────────────┐           ┌───────────────┴───────────────────┐   │
+│   │  redb.yaml      │  apply    │  Database on cluster + Service   │   │
+│   │  (REDB manifest)│ ───────►  │  (your app connects to this)     │   │
+│   └─────────────────┘           └───────────────────────────────────┘   │
+│                                                                         │
+└─────────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+### 7.3 What is REC? (Redis Enterprise Cluster)
+
+**REC** = **Redis Enterprise Cluster**. Think of it as the **“Redis server farm”** or the **“cluster brain”** that can host many Redis databases.
+
+- You create **one REC per namespace** (e.g. `my-rec`).
+- In the REC manifest you say: “I want 3 nodes, this much CPU/memory per node, and this much persistent storage.”
+- The **operator** then creates the real resources: a **StatefulSet** (one pod per “node”), **PersistentVolumeClaims**, **Services** for the cluster API and UI, etc.
+- The REC **does not** give you a Redis endpoint your app can use yet. It only gives you the **cluster** that will **host** databases.
+
+**Mental model:** REC is like a **building** that can contain many **apartments**. The building is there, but you still need to “create” each apartment (database) inside it.
+
+```
+                    REC (Redis Enterprise Cluster)
+    ┌──────────────────────────────────────────────────────────────────┐
+    │  Your REC manifest says: "3 nodes, 4Gi RAM each, 20Gi storage"    │
+    │                                                                   │
+    │     ┌─────────────┐  ┌─────────────┐  ┌─────────────┐             │
+    │     │  Node 1     │  │  Node 2     │  │  Node 3     │             │
+    │     │  (Pod)      │  │  (Pod)      │  │  (Pod)      │             │
+    │     │  + PVC      │  │  + PVC      │  │  + PVC      │             │
+    │     └─────────────┘  └─────────────┘  └─────────────┘             │
+    │            │                │                │                    │
+    │            └────────────────┼────────────────┘                    │
+    │                              │                                      │
+    │                     Cluster control plane                           │
+    │                     (manages databases, UI, API)                    │
+    │                                                                   │
+    │  No "Redis port" for your app yet — just the cluster.              │
+    └──────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+### 7.4 What is REDB? (Redis Enterprise Database)
+
+**REDB** = **Redis Enterprise Database**. It is **one Redis database** that runs **on top of** an existing REC.
+
+- You create a **REDB** manifest that says: “Create a database on cluster `my-rec`, with 256MB memory, 1 shard, no replication.”
+- The **operator** talks to the REC (the cluster) and creates the database there. It also creates a **Kubernetes Service** so your apps can connect to this database (host + port).
+- Your app connects to **that Service** (e.g. `my-redb:6379`) — that is your Redis endpoint.
+
+**Mental model:** REDB is one **apartment** (database) inside the **building** (REC). Each apartment has its own address (Service). Your app connects to the apartment’s address, not to the building.
+
+```
+    REC (the "building")                    REDB (one "apartment" / database)
+    ┌─────────────────────────────┐         ┌─────────────────────────────┐
+    │  my-rec (cluster)            │         │  my-redb (database)         │
+    │  Nodes 1, 2, 3              │         │  memorySize: 256MB          │
+    │                             │         │  shardCount: 1              │
+    │  ┌─────┐ ┌─────┐ ┌─────┐    │         │                             │
+    │  │ N1  │ │ N2  │ │ N3  │    │         │  Operator creates:          │
+    │  └──┬──┘ └──┬──┘ └──┬──┘    │         │  • Database on REC          │
+    │     │       │       │       │         │  • Service: my-redb:6379     │
+    │     └───────┼───────┘       │         │                             │
+    │             │               │         │  Your app ──────────────────┼──► my-redb:6379
+    │     (cluster hosts          │         │  connects here             │
+    │      databases)             │         └─────────────────────────────┘
+    └─────────────────────────────┘
+```
+
+---
+
+### 7.5 Full flow: from your manifests to your app connecting
+
+The diagram below shows the **full flow** when you use the operator: you only apply REC and REDB; the operator and the cluster do the rest.
+
+```mermaid
+flowchart LR
+    subgraph You["You (manifests)"]
+        A[rec.yaml\nREC]
+        B[redb.yaml\nREDB]
+    end
+
+    subgraph Operator["Redis Enterprise Operator"]
+        O[Watches REC & REDB]
+    end
+
+    subgraph Cluster["Cluster (created by operator)"]
+        REC[REC: StatefulSet\nPods, PVCs, Services]
+        REDB[REDB: Database\n+ Service my-redb:6379]
+    end
+
+    subgraph App["Your application"]
+        C[App connects to\nmy-redb:6379]
+    end
+
+    A -->|kubectl apply| O
+    B -->|kubectl apply| O
+    O -->|creates| REC
+    O -->|creates| REDB
+    REDB -->|connect| C
+```
+
+**In words:**
+
+1. You apply **rec.yaml** (REC). The operator sees it and creates the Redis Enterprise cluster (Pods, storage, cluster services).
+2. You apply **redb.yaml** (REDB), with `redisEnterpriseCluster.name: my-rec`. The operator creates the database on that REC and a **Service** (e.g. `my-redb:6379`).
+3. Your application uses the **Service name and port** (e.g. `my-redb:6379`) as the Redis connection endpoint. No need to know about Pods or nodes.
+
+---
+
+### 7.6 Side-by-side: simple app vs Redis Enterprise (operator)
+
+| Aspect | Simple app (Deployment + Service) | Redis Enterprise (Operator + REC + REDB) |
+|--------|-----------------------------------|------------------------------------------|
+| **What you write** | Deployment YAML + Service YAML | REC YAML + REDB YAML (no Deployment/StatefulSet) |
+| **Who creates Pods** | Kubernetes (from your Deployment) | Operator (from your REC) |
+| **Who creates the “entry point”** | You (Service YAML) | Operator (Service for REDB) |
+| **What your app connects to** | Service (e.g. `my-app:8080`) | Service created for REDB (e.g. `my-redb:6379`) |
+| **Complexity** | You define every resource | You define “intent”; operator defines details |
+
+So: **with a simple app you define the resources yourself; with the operator you define REC (cluster) and REDB (database), and the operator defines and manages the underlying resources.**
+
+---
+
+### 7.7 Minimal example: two files you apply
+
+**Step 1 — Create the cluster (REC).** Save as `rec.yaml` and run `kubectl apply -f rec.yaml`:
+
+```yaml
+apiVersion: app.redislabs.com/v1
+kind: RedisEnterpriseCluster
+metadata:
+  name: my-rec
+spec:
+  nodes: 3
+  persistentSpec:
+    enabled: true
+    volumeSize: 20Gi
+  redisEnterpriseNodeResources:
+    requests: { cpu: "2", memory: "4Gi" }
+    limits:   { cpu: "2", memory: "4Gi" }
+```
+
+**Step 2 — Create the database (REDB).** Do this **after** the REC is ready (`kubectl get rec` shows the cluster). Save as `redb.yaml` and run `kubectl apply -f redb.yaml`:
+
+```yaml
+apiVersion: app.redislabs.com/v1alpha1
+kind: RedisEnterpriseDatabase
+metadata:
+  name: my-redb
+spec:
+  redisEnterpriseCluster:
+    name: my-rec          # same name as your REC
+  memorySize: 256MB
+  shardCount: 1
+  replication: false
+```
+
+**Step 3 — Connect your app.** The operator creates a Service for the REDB. From the same namespace, your app connects to:
+
+- **Host:** `my-redb` (the name of the REDB resource)
+- **Port:** `6379` (default Redis port, unless you change it)
+
+So the Redis URL is typically: `my-redb:6379`. Get the password from the secret the operator created for the database (e.g. `kubectl get secret` and use the one associated with the REDB).
+
+---
+
+### 7.8 Summary for juniors
+
+| Term | Meaning |
+|------|--------|
+| **REC** | Redis Enterprise **Cluster**. The “server farm” that hosts Redis databases. You create it with one YAML; the operator creates the real Pods, storage, and cluster services. |
+| **REDB** | Redis Enterprise **Database**. One Redis database **on** an REC. You create it with one YAML; the operator creates the database and a **Service** so your app can connect (e.g. `my-redb:6379`). |
+| **Operator** | A controller that watches REC and REDB manifests and creates/updates all the real Kubernetes resources. You don’t write Deployment/StatefulSet for Redis; the operator does. |
+
+**One sentence:** You apply a **REC** to get a cluster, then apply a **REDB** to get a Redis database and its Service; your app connects to the REDB’s Service just like it would connect to any other Kubernetes Service.
