@@ -1,0 +1,20 @@
+# Redis Enterprise Cluster (REC)
+# Use kind: RedisEnterpriseCluster — not "redisenterprise".
+# Deploy in the SAME namespace as the Redis Enterprise operator to avoid "cannot create resource" errors.
+apiVersion: app.redislabs.com/v1
+kind: RedisEnterpriseCluster
+metadata:
+  name: my-rec
+  namespace: redis-enterprise
+spec:
+  nodes: 3
+  persistentSpec:
+    enabled: true
+    volumeSize: 20Gi
+  redisEnterpriseNodeResources:
+    requests:
+      cpu: "2"
+      memory: "4Gi"
+    limits:
+      cpu: "2"
+      memory: "4Gi"

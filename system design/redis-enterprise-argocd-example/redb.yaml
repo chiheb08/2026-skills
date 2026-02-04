@@ -1,0 +1,15 @@
+# Redis Enterprise Database (REDB)
+# Use kind: RedisEnterpriseDatabase — not "redisenterprise".
+# spec.redisEnterpriseCluster.name must match the REC metadata.name (my-rec).
+# Deploy in the SAME namespace as the REC and operator.
+apiVersion: app.redislabs.com/v1alpha1
+kind: RedisEnterpriseDatabase
+metadata:
+  name: my-redb
+  namespace: redis-enterprise
+spec:
+  redisEnterpriseCluster:
+    name: my-rec
+  memorySize: 256MB
+  shardCount: 1
+  replication: false

@@ -1,0 +1,25 @@
+# Argo CD Application — deploy REC and REDB from Git
+# 1) Replace spec.source.repoURL with your Git repo URL
+# 2) Replace spec.source.path with the path to the folder containing rec.yaml and redb.yaml
+# 3) Ensure spec.destination.namespace matches the namespace in rec.yaml/redb.yaml (redis-enterprise)
+# 4) Apply once: kubectl apply -f application.yaml -n argocd
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: redis-enterprise
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/chiheb08/2026-skills.git
+    targetRevision: main
+    path: system design/redis-enterprise-argocd-example
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: redis-enterprise
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
