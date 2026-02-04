@@ -146,13 +146,26 @@ Your apps connect to the REDB’s Service (e.g. `my-redb:6379`).
 
 Example files are in **`redis-enterprise-argocd-example/`** in this repo. Use them as a template; replace namespace, names, and repo URL with your values.
 
+### Option: single manifest file (REC + REDB in one YAML)
+
+You can deploy REC and REDB from **one file** instead of separate rec.yaml and redb.yaml:
+
+- **redis-enterprise-all-in-one.yaml** — contains both `RedisEnterpriseCluster` and `RedisEnterpriseDatabase` (separated by `---`). Deploy with:
+
+  ```bash
+  kubectl apply -f redis-enterprise-all-in-one.yaml
+  ```
+
+Use this when you prefer a single manifest (no Helm) or when Argo CD syncs a directory that includes this file (Argo CD will apply both resources).
+
 ### Folder structure
 
 ```
 redis-enterprise-argocd-example/
-  rec.yaml          # RedisEnterpriseCluster
-  redb.yaml         # RedisEnterpriseDatabase (depends on REC)
-  application.yaml  # Argo CD Application (optional)
+  redis-enterprise-all-in-one.yaml   # REC + REDB in one file (manifest option)
+  rec.yaml                           # RedisEnterpriseCluster
+  redb.yaml                          # RedisEnterpriseDatabase (depends on REC)
+  application.yaml                   # Argo CD Application (optional)
 ```
 
 ### rec.yaml

@@ -1,0 +1,44 @@
+# Redis Enterprise — REC + REDB in one manifest file
+# Deploy: kubectl apply -f redis-enterprise-all-in-one.yaml
+# Prerequisites: Redis Enterprise operator installed in namespace redis-enterprise.
+# REC and REDB must be in the SAME namespace as the operator.
+---
+apiVersion: app.redislabs.com/v1
+kind: RedisEnterpriseCluster
+metadata:
+  name: rec
+  namespace: redis-enterprise
+spec:
+  nodes: 3
+  persistentSpec:
+    enabled: true
+    volumeSize: 20Gi
+  redisEnterpriseNodeResources:
+    requests:
+      cpu: "2"
+      memory: "4Gi"
+    limits:
+      cpu: "2"
+      memory: "4Gi"
+  bootstrapperImageSpec:
+    repository: registry.connect.redhat.com/redislabs/redis-enterprise-operator
+  redisEnterpriseServicesRiggerImageSpec:
+    repository: registry.connect.redhat.com/redislabs/services-manager
+  redisEnterpriseImageSpec:
+    repository: registry.connect.redhat.com/redislabs/redis-enterprise
+  usageMeter:
+    callHomeClient:
+      imageSpec:
+        repository: registry.connect.redhat.com/redislabs/call-home-client
+---
+apiVersion: app.redislabs.com/v1alpha1
+kind: RedisEnterpriseDatabase
+metadata:
+  name: my-redb
+  namespace: redis-enterprise
+spec:
+  redisEnterpriseCluster:
+    name: rec
+  memorySize: 256MB
+  shardCount: 1
+  replication: false
