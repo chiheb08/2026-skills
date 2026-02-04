@@ -18,6 +18,7 @@ If you are new to this flow (“we use Helm, push to Artifactory, and I see Helm
 4. [What Each Piece Does](#4-what-each-piece-does)
 5. [Why Argo CD and Flux Together?](#5-why-argocd-and-flux-together)
 6. [Quick Reference](#6-quick-reference)
+7. [Simple Example: One App, Step by Step (Junior-Friendly)](#7-simple-example-one-app-step-by-step-junior-friendly)
 
 ---
 
@@ -177,6 +178,211 @@ You could use only Argo CD with native Helm support (Argo CD can also pull Helm 
 | **Flux** | In the cluster; watches HelmReleases and runs **Helm** to install/upgrade the chart from Artifactory. |
 
 **One sentence:** Charts are built and stored in Artifactory; “which chart and which values” are defined in Git as a HelmRelease; Argo CD applies that from Git; Flux installs the chart from Artifactory into the cluster.
+
+---
+
+## 7. Simple Example: One App, Step by Step (Junior-Friendly)
+
+This section uses a **very simple example**: one small app called **hello-app** (e.g. a tiny web server that says "Hello"). Each file and each step is explained so you can follow along even if you are new to Helm, Git, or Kubernetes.
+
+### 7.1 What we are going to do
+
+We will: (1) create a Helm chart for hello-app in a **chart repo**, (2) package it and push it to **Artifactory**, (3) add a **HelmRelease** in the **Argo CD repo** that says "deploy hello-app from Artifactory with these settings", (4) push to Git so **Argo CD** applies it and **Flux** installs the app in the cluster.
+
+### 7.2 Repositories we use (simple names)
+
+| Repo name (example) | What it contains | Who uses it |
+|---------------------|------------------|-------------|
+| **chart-repo** | Helm chart for hello-app (templates + values) | You / CI: edit chart, package, then push the .tgz to Artifactory |
+| **deploy-repo** | YAML files: HelmRepository, HelmRelease | Argo CD: syncs these files to the cluster |
+| **Artifactory** | Not a Git repo; stores the built chart file (e.g. hello-app-1.0.0.tgz) | Flux: pulls the chart from here when it sees a HelmRelease |
+
+### 7.3 Step 1: Create the Helm chart (in chart-repo)
+
+A Helm chart is a folder with a fixed structure. Below is the **minimum** you need.
+
+**Folder structure:**
+
+```
+chart-repo/hello-app/
+  Chart.yaml          # Name and version of the chart
+  values.yaml         # Default config (replicas, image, port)
+  templates/
+    deployment.yaml   # "Run these containers"
+    service.yaml      # "Expose this app on a port"
+```
+
+**File 1: `Chart.yaml`**
+
+```yaml
+apiVersion: v2
+name: hello-app
+description: A simple hello app
+version: 1.0.0
+appVersion: "1.0"
+```
+
+- **name:** The chart name. You use this in the HelmRelease later (e.g. chart: hello-app).
+- **version:** Chart version. When you run `helm package .`, the file will be hello-app-1.0.0.tgz. You refer to this version in the HelmRelease.
+
+**File 2: `values.yaml`**
+
+```yaml
+replicaCount: 1
+image:
+  repository: myregistry.io/hello-app
+  tag: "1.0"
+  pullPolicy: IfNotPresent
+service:
+  port: 80
+```
+
+- **replicaCount:** Number of pods (copies) of the app. You can override this in the HelmRelease (e.g. set 3 in Git).
+- **image:** Which container image to run. **repository** = image name; **tag** = version.
+- **service.port:** Port on which the app is exposed.
+
+**File 3: `templates/deployment.yaml`**
+
+```yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      app: {{ .Release.Name }}
+  template:
+    metadata:
+      labels:
+        app: {{ .Release.Name }}
+    spec:
+      containers:
+        - name: hello-app
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          ports:
+            - containerPort: {{ .Values.service.port }}
+```
+
+- **{{ .Release.Name }}:** The name of the Helm release (e.g. hello-app).
+- **{{ .Values.replicaCount }}:** Replaced by replicaCount from values (1 by default, or what you set in the HelmRelease).
+- **{{ .Values.image.repository }}:{{ .Values.image.tag }}:** Replaced by the image name and tag.
+
+**File 4: `templates/service.yaml`**
+
+```yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Release.Name }}
+spec:
+  ports:
+    - port: {{ .Values.service.port }}
+      targetPort: {{ .Values.service.port }}
+  selector:
+    app: {{ .Release.Name }}
+```
+
+- **selector:** "Send traffic to pods with this label." Here: pods created by the Deployment above.
+
+After these four files, you have a **complete (minimal) Helm chart** for hello-app.
+
+### 7.4 Step 2: Package the chart and push to Artifactory
+
+1. Go into the chart folder: `cd chart-repo/hello-app`
+2. Package: `helm package .` → creates **hello-app-1.0.0.tgz**
+3. Push that file to **JFrog Artifactory** (your team has the URL and credentials). Example: `curl -u user:token -T hello-app-1.0.0.tgz "https://artifactory.mycompany.com/helm-repo/"`
+
+**Result:** The chart is stored in Artifactory. Flux will download it using the HelmRepository URL.
+
+### 7.5 Step 3: Tell the cluster where Artifactory is (HelmRepository)
+
+Create a **HelmRepository** in the **deploy-repo** so Flux knows "when I need a chart from Artifactory, use this URL."
+
+**File in deploy-repo: `helm-repository.yaml`**
+
+```yaml
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: HelmRepository
+metadata:
+  name: jfrog-artifactory
+  namespace: flux-system
+spec:
+  url: https://artifactory.mycompany.com/helm-repo
+  interval: 1h
+  secretRef:
+    name: artifactory-credentials
+```
+
+- **kind: HelmRepository:** Flux resource = "a Helm repo (place where .tgz charts are stored)".
+- **metadata.name: jfrog-artifactory:** Name you use in the HelmRelease (sourceRef.name).
+- **spec.url:** Base URL of your Helm repo in Artifactory.
+- **spec.secretRef:** If Artifactory requires login, credentials are in a Secret named artifactory-credentials.
+
+**Result:** The cluster has a "pointer" to Artifactory. When a HelmRelease says "get the chart from jfrog-artifactory", Flux uses this URL.
+
+### 7.6 Step 4: Ask the cluster to deploy hello-app (HelmRelease)
+
+Add a **HelmRelease** in the deploy-repo: "Install hello-app using chart hello-app version 1.0.0 from jfrog-artifactory, with these values."
+
+**File in deploy-repo: `hello-app-release.yaml`**
+
+```yaml
+apiVersion: helm.toolkit.fluxcd.io/v2beta1
+kind: HelmRelease
+metadata:
+  name: hello-app
+  namespace: default
+spec:
+  chart:
+    spec:
+      chart: hello-app
+      version: "1.0.0"
+      sourceRef:
+        kind: HelmRepository
+        name: jfrog-artifactory
+        namespace: flux-system
+  values:
+    replicaCount: 2
+    image:
+      tag: "1.0"
+```
+
+**Explanation:**
+
+- **kind: HelmRelease:** Flux resource = "install or upgrade this Helm release".
+- **metadata.name: hello-app:** Release name. Deployment and Service will be named hello-app.
+- **spec.chart.spec.chart: hello-app:** Chart name (must match Chart.yaml). Flux looks for hello-app-1.0.0.tgz.
+- **spec.chart.spec.version: "1.0.0":** Chart version (must match Chart.yaml).
+- **spec.chart.spec.sourceRef:** Where to get the chart. **name: jfrog-artifactory** = use the HelmRepository we created in Step 3 (Artifactory).
+- **spec.values:** Overrides. Here **replicaCount: 2** (2 pods) and **image.tag: "1.0"**. Rest comes from the chart defaults.
+
+**Result:** You have told the cluster (via Git): "Deploy hello-app from Artifactory, version 1.0.0, with 2 replicas." Argo CD will apply this YAML; Flux will see the HelmRelease and run Helm to install the chart.
+
+### 7.7 Step 5: Push the deploy-repo to Git
+
+Commit and push `helm-repository.yaml` and `hello-app-release.yaml` to the deploy-repo (the one Argo CD watches).
+
+**What happens next (automatically):**
+
+1. **Argo CD** sees the new/updated files and applies them. The cluster now has a HelmRepository and a HelmRelease.
+2. **Flux** sees the HelmRelease "hello-app". It downloads hello-app-1.0.0.tgz from Artifactory, runs Helm, and creates the Deployment and Service.
+3. **Kubernetes** runs 2 pods and the Service. hello-app is running in the cluster.
+
+### 7.8 Summary of the example
+
+| Step | Where | What you do | Result |
+|------|--------|-------------|--------|
+| 1 | chart-repo | Create Chart.yaml, values.yaml, templates/deployment.yaml, templates/service.yaml | You have a Helm chart for hello-app. |
+| 2 | Laptop / CI | helm package . and push .tgz to Artifactory | Chart is stored in Artifactory. |
+| 3 | deploy-repo | Add HelmRepository YAML (name, URL, credentials ref) | Cluster knows how to reach Artifactory. |
+| 4 | deploy-repo | Add HelmRelease YAML (chart name, version, sourceRef, values) | You declare "deploy hello-app from Artifactory with these values". |
+| 5 | deploy-repo | Push to Git | Argo CD applies the YAML; Flux installs the chart; hello-app runs. |
+
+**To change the chart (e.g. fix a template):** Bump chart version, package again, push to Artifactory, then in deploy-repo change the HelmRelease version and push to Git. Flux will upgrade the release.
+
+**To change only values (e.g. replicaCount from 2 to 3):** Edit the HelmRelease in the deploy-repo and push to Git. No need to repackage the chart.
 
 ---
 
