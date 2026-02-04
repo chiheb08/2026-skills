@@ -15,6 +15,7 @@ spec:
     {{- if .Values.rec.persistentSpec.storageClassName }}
     storageClassName: {{ .Values.rec.persistentSpec.storageClassName }}
     {{- end }}
+  {{- if .Values.rec.redisEnterpriseNodeResources }}
   redisEnterpriseNodeResources:
     requests:
       cpu: {{ .Values.rec.redisEnterpriseNodeResources.requests.cpu | quote }}
@@ -22,6 +23,23 @@ spec:
     limits:
       cpu: {{ .Values.rec.redisEnterpriseNodeResources.limits.cpu | quote }}
       memory: {{ .Values.rec.redisEnterpriseNodeResources.limits.memory | quote }}
+  {{- end }}
+  {{- if .Values.rec.bootstrapperImageSpec }}
+  bootstrapperImageSpec:
+    {{- toYaml .Values.rec.bootstrapperImageSpec | nindent 4 }}
+  {{- end }}
+  {{- if .Values.rec.redisEnterpriseServicesRiggerImageSpec }}
+  redisEnterpriseServicesRiggerImageSpec:
+    {{- toYaml .Values.rec.redisEnterpriseServicesRiggerImageSpec | nindent 4 }}
+  {{- end }}
+  {{- if .Values.rec.redisEnterpriseImageSpec }}
+  redisEnterpriseImageSpec:
+    {{- toYaml .Values.rec.redisEnterpriseImageSpec | nindent 4 }}
+  {{- end }}
+  {{- if .Values.rec.usageMeter }}
+  usageMeter:
+    {{- toYaml .Values.rec.usageMeter | nindent 4 }}
+  {{- end }}
   {{- if .Values.rec.clusterCredentialSecretName }}
   clusterCredentialSecretName: {{ .Values.rec.clusterCredentialSecretName }}
   {{- end }}
