@@ -21,7 +21,7 @@ This document explains how to deploy the **Redis Enterprise operator** (on Kuber
 The **Redis Enterprise operator** runs inside your Kubernetes or OpenShift cluster and manages **Redis Enterprise**:
 
 - It watches two main **custom resources**: **RedisEnterpriseCluster (REC)** and **RedisEnterpriseDatabase (REDB)**.
-- When you create a **REC**, the operator deploys a Redis Enterprise cluster (the control plane and data nodes).
+- When you create a **REC**, the operator deploys a Redis Enterprise cluster (Redis Enterprise’s own management layer and data nodes — see [section 7](#7-junior-friendly-what-are-rec-and-redb-diagrams-and-examples); this is **not** the Kubernetes control plane).
 - When you create a **REDB**, the operator creates a Redis database on that REC (the actual Redis instance your apps connect to).
 
 So: **install the operator once → create REC (cluster) → create REDB (database) → connect your apps to the REDB.**
@@ -380,6 +380,8 @@ The **operator** (a controller running in the cluster) **watches** these manifes
 
 **Mental model:** REC is like a **building** that can contain many **apartments**. The building is there, but you still need to “create” each apartment (database) inside it.
 
+**Don’t confuse: two different “control planes”.** Your **Kubernetes cluster** already has a control plane (API server, scheduler, etc.) — that’s what runs the whole cluster. When we say the REC has a “cluster manager” or “control plane”, we mean **Redis Enterprise’s own** management layer: the software *inside* the REC that manages Redis databases, the Redis UI, and the Redis API. That runs *inside* your Kubernetes cluster as part of the REC pods. So: **Kubernetes control plane** = runs the cluster; **Redis Enterprise cluster manager** = runs inside the REC and manages Redis databases. They are separate.
+
 ```
                     REC (Redis Enterprise Cluster)
     ┌──────────────────────────────────────────────────────────────────┐
@@ -393,8 +395,9 @@ The **operator** (a controller running in the cluster) **watches** these manifes
     │            │                │                │                    │
     │            └────────────────┼────────────────┘                    │
     │                              │                                      │
-    │                     Cluster control plane                           │
-    │                     (manages databases, UI, API)                    │
+    │         Redis Enterprise cluster manager                           │
+    │         (Redis’ own management — not Kubernetes control plane)     │
+    │         (manages databases, UI, API inside the REC)                │
     │                                                                   │
     │  No "Redis port" for your app yet — just the cluster.              │
     └──────────────────────────────────────────────────────────────────┘
@@ -531,8 +534,9 @@ So the Redis URL is typically: `my-redb:6379`. Get the password from the secret 
 
 | Term | Meaning |
 |------|--------|
-| **REC** | Redis Enterprise **Cluster**. The “server farm” that hosts Redis databases. You create it with one YAML; the operator creates the real Pods, storage, and cluster services. |
+| **REC** | Redis Enterprise **Cluster**. The “server farm” that hosts Redis databases. You create it with one YAML; the operator creates the real Pods, storage, and Redis Enterprise’s own cluster manager (not the Kubernetes control plane). |
 | **REDB** | Redis Enterprise **Database**. One Redis database **on** an REC. You create it with one YAML; the operator creates the database and a **Service** so your app can connect (e.g. `my-redb:6379`). |
 | **Operator** | A controller that watches REC and REDB manifests and creates/updates all the real Kubernetes resources. You don’t write Deployment/StatefulSet for Redis; the operator does. |
+| **Kubernetes vs REC “control plane”** | **Kubernetes control plane** = API server, scheduler, etc. — runs the whole cluster. **Redis Enterprise cluster manager** = software inside the REC that manages Redis databases, UI, API. They are different; the REC’s manager runs inside your K8s cluster. |
 
 **One sentence:** You apply a **REC** to get a cluster, then apply a **REDB** to get a Redis database and its Service; your app connects to the REDB’s Service just like it would connect to any other Kubernetes Service.
