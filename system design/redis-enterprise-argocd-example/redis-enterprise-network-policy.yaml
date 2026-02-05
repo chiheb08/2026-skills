@@ -1,0 +1,81 @@
+# Redis Enterprise — NetworkPolicy: allow traffic to/from REC pods
+# Apply in the same namespace as your REC (e.g. redis-enterprise).
+# Prerequisite: CNI must support NetworkPolicy (Calico, OVN-Kubernetes, Cilium, etc.).
+#
+# 1) Set podSelector.matchLabels to match your REC cluster pods.
+#    Common: REC name "rec" -> operator creates StatefulSet "rec", pods often labeled
+#    with app=rec or similar. Check with:
+#      kubectl get pods -n redis-enterprise --show-labels
+#    Then set matchLabels to one of the labels that identifies REC pods (e.g. app: rec).
+#
+# 2) Apply:
+#    kubectl apply -f redis-enterprise-network-policy.yaml -n redis-enterprise
+#
+# OpenShift: If DNS is in openshift-dns, change the egress DNS rule to use
+#   matchLabels: kubernetes.io/metadata.name: openshift-dns  (or the name of your DNS namespace).
+#
+# Ingress: REC pods accept traffic from (a) other REC pods, (b) any pod in same namespace.
+# Egress:  REC pods can reach (a) other REC pods, (b) DNS (kube-system), (c) rest of cluster/external as needed.
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: redis-enterprise-allow
+  namespace: redis-enterprise
+spec:
+  # Select REC cluster pods. Adjust matchLabels to your REC's pod labels (e.g. app: rec for REC name "rec").
+  podSelector:
+    matchLabels:
+      app: rec
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    # Allow from other REC pods (same cluster)
+    - from:
+        - podSelector:
+            matchLabels:
+              app: rec
+      # ports optional here; omit to allow all ports
+    # Allow from any pod in same namespace (clients, operator, etc.)
+    - from:
+        - podSelector: {}
+  egress:
+    # To other REC pods
+    - to:
+        - podSelector:
+            matchLabels:
+              app: rec
+    # DNS (UDP and TCP)
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    # Egress to rest of cluster and external (call-home, image pull, etc.)
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+---
+# Optional: allow traffic FROM other namespaces TO Redis (e.g. apps in namespace "my-app")
+# Uncomment and set namespaceSelector or podSelector as needed.
+# apiVersion: networking.k8s.io/v1
+# kind: NetworkPolicy
+# metadata:
+#   name: redis-enterprise-allow-from-apps
+#   namespace: redis-enterprise
+# spec:
+#   podSelector:
+#     matchLabels:
+#       app: rec
+#   policyTypes:
+#     - Ingress
+#   ingress:
+#     - from:
+#         - namespaceSelector:
+#             matchLabels:
+#               kubernetes.io/metadata.name: my-app
