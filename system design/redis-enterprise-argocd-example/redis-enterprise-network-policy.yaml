@@ -20,7 +20,7 @@
 # allows traffic from rec-services-rigger (rules below) and that Service rec has endpoints.
 #
 # Ingress: Redis Enterprise pods accept traffic from redis-enterprise, vllm, litellm-db, and
-# rec-services-rigger (and other REC component pods) so services-rigger can reach rec:9443.
+# rec-services-rigger. Port 9443 (REC REST API) is explicitly allowed for API callers.
 # Egress:  Redis Enterprise pods can reach redis-enterprise, vllm, litellm-db, plus external.
 ---
 apiVersion: networking.k8s.io/v1
@@ -51,6 +51,12 @@ spec:
         - podSelector:
             matchLabels:
               app: rec
+    # Explicit: allow ingress to REC pods on port 9443 (REST API) from any pod in same namespace
+    - from:
+        - podSelector: {}
+      ports:
+        - protocol: TCP
+          port: 9443
     # From vllm pods
     - from:
         - podSelector:
