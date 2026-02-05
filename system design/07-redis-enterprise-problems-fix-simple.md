@@ -270,6 +270,18 @@ Argo CD might be using a health check that never passes for the REC. You can:
 
 ---
 
+## Fix 6: rec-services-rigger "get https://rec:9443/v1/nodes: context deadline exceeded"
+
+**What it means:** The **rec-services-rigger** pod (Services Manager) is calling the REC REST API at **https://rec:9443/v1/nodes** and the request is timing out. So you see "context deadline exceeded" or "Client.Timeout exceeded while awaiting headers" in the services-rigger logs.
+
+**Why it happens:** Usually (1) the Service **rec** has no endpoints (REC pods not Ready yet), (2) REC pods are not listening on 9443 yet (bootstrap not finished), or (3) a **NetworkPolicy** is blocking rec-services-rigger from reaching the REC pods.
+
+**What to do:** Check that the Service **rec** has endpoints (`kubectl get endpoints rec -n YOUR_NAMESPACE`), that REC pods (rec-0, …) are Running and Ready, and that your NetworkPolicy allows traffic **from** rec-services-rigger **to** REC pods (e.g. add an ingress rule for pods with label `app.kubernetes.io/component: services-rigger` or `app: rec`). Then retry or wait for bootstrap to complete.
+
+**Deep dive:** For step-by-step checks (Service, endpoints, REC pods, NetworkPolicy, connectivity test), see [10-redis-enterprise-rec-services-rigger-9443-timeout-deep-dive.md](10-redis-enterprise-rec-services-rigger-9443-timeout-deep-dive.md).
+
+---
+
 ## Checklist: do these in order
 
 1. REC and REDB in the **same namespace** as the Redis Enterprise operator.  
@@ -291,3 +303,4 @@ Argo CD might be using a health check that never passes for the REC. You can:
 - **"rec-0 not found" / "Waiting for first pod"** → Check pods/PVC/events in the namespace; fix storage, image pull secret, or memory; on OpenShift fix SCC if needed.  
 - **"ConfigMap rec-bulletin-board not found"** → Fix the conflict (ignoreDifferences) and RBAC so the operator can create the ConfigMap; if needed, delete the REC and re-apply (only if safe).  
 - **REC stuck Progressing, REDB never created** → Add ignoreDifferences, disable auto-sync, fix REC pods and operator (ConfigMap, PVC, image, memory), wait for REC to become ready, then REDB can be created (Fix 5).
+- **rec-services-rigger "get https://rec:9443/v1/nodes: context deadline exceeded"** → Ensure Service **rec** has endpoints, REC pods are Ready, and NetworkPolicy allows rec-services-rigger → rec; see [10-redis-enterprise-rec-services-rigger-9443-timeout-deep-dive.md](10-redis-enterprise-rec-services-rigger-9443-timeout-deep-dive.md).

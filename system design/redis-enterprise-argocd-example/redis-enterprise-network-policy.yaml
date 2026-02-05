@@ -15,8 +15,13 @@
 # Apply:
 #   kubectl apply -f redis-enterprise-network-policy.yaml -n redis-enterprise
 #
-# Ingress: Redis Enterprise pods accept traffic from pods labeled redis-enterprise, vllm, litellm-db.
-# Egress:  Redis Enterprise pods can reach pods labeled redis-enterprise, vllm, litellm-db, plus external.
+# If rec-services-rigger logs "get https://rec:9443/v1/nodes: context deadline exceeded", see
+# 10-redis-enterprise-rec-services-rigger-9443-timeout-deep-dive.md and ensure this policy
+# allows traffic from rec-services-rigger (rules below) and that Service rec has endpoints.
+#
+# Ingress: Redis Enterprise pods accept traffic from redis-enterprise, vllm, litellm-db, and
+# rec-services-rigger (and other REC component pods) so services-rigger can reach rec:9443.
+# Egress:  Redis Enterprise pods can reach redis-enterprise, vllm, litellm-db, plus external.
 ---
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
@@ -24,7 +29,7 @@ metadata:
   name: redis-enterprise-allow
   namespace: redis-enterprise
 spec:
-  # Pods with label "redis-enterprise"
+  # Pods with label "redis-enterprise" (REC cluster nodes and components that use this label)
   podSelector:
     matchLabels:
       app.kubernetes.io/name: redis-enterprise
@@ -37,6 +42,15 @@ spec:
         - podSelector:
             matchLabels:
               app.kubernetes.io/name: redis-enterprise
+    # From rec-services-rigger (and other REC components) so they can reach rec:9443 API
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/component: services-rigger
+    - from:
+        - podSelector:
+            matchLabels:
+              app: rec
     # From vllm pods
     - from:
         - podSelector:
