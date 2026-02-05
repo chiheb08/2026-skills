@@ -193,6 +193,8 @@ Then either:
 
 **Summary:** The "rec-bulletin-board not found" message usually means the operator couldn’t finish setting up the REC. Fix the "object has been modified" conflict (ignoreDifferences, disable auto-sync), check RBAC, then let the operator run; it should create the ConfigMap. If not, delete the REC and re-apply only if safe.
 
+**Deep dive:** For a full explanation of what the bulletin board ConfigMap is, why it goes missing, and a step-by-step fix (including RBAC checks and prune), see [09-redis-enterprise-rec-bulletin-board-deep-dive.md](09-redis-enterprise-rec-bulletin-board-deep-dive.md).
+
 ---
 
 ## Fix 5: REC stuck in Progressing in Argo CD — REDB never created
