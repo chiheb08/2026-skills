@@ -69,6 +69,32 @@ kubectl get configmap rec-bulletin-board -n $NS
 
 The operator’s ServiceAccount must have permission to create/update ConfigMaps in the **REC’s namespace**.
 
+**Where to add the `apiGroups` / ConfigMap rule**
+
+| What | Where exactly |
+|------|----------------|
+| **Resource** | The **Role** named `redis-enterprise-operator` (or the Role bound to the operator’s ServiceAccount) in the **namespace where the operator runs** (same as `$NS` when operator and REC are in one namespace). |
+| **Inside the Role** | Under the **`rules:`** array. Each rule is a list item with `apiGroups`, `resources`, and `verbs`. |
+| **What to add** | A **new** rule entry (a new list item under `rules:`), not a new file. |
+
+**Which “file” to edit**
+
+- **If you don’t manage the operator from Git/Helm:** Edit the **live Role** in the cluster:
+  ```bash
+  kubectl edit role redis-enterprise-operator -n $NS
+  ```
+  In the editor, find the **`rules:`** section (it’s a YAML list). Add the following as a **new list item** under `rules:` (same indentation as existing rules):
+
+  ```yaml
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    verbs: ["create", "delete", "get", "list", "patch", "update", "watch"]
+  ```
+
+  Save and exit. The change applies immediately; no restart needed for RBAC (the operator will use it on the next reconciliation).
+
+- **If you install the operator from a Helm chart or OLM:** The Role is defined in the operator’s manifests (e.g. Helm chart `templates/role.yaml` or the OLM ClusterServiceVersion). Edit that **Role manifest** in the operator’s chart/bundle: add the same rule under **`rules:`**, then upgrade the operator (e.g. `helm upgrade` or update the subscription). The “file” is in the operator’s repo/chart, not in your REC/REDB repo.
+
 **A. Same namespace (operator and REC in one namespace)**
 
 List the Role bound to the operator’s ServiceAccount in that namespace:
@@ -84,7 +110,7 @@ Or get the Role and check for `configmaps`:
 kubectl get role redis-enterprise-operator -n $NS -o yaml
 ```
 
-Ensure there is a rule with `resources: ["configmaps"]` and verbs including `create`, `update`, `get`, `list`, `watch`, `patch`, `delete`. If not, add a rule like:
+Ensure there is a rule with `resources: ["configmaps"]` and verbs including `create`, `update`, `get`, `list`, `watch`, `patch`, `delete`. If not, add a rule like (under **`rules:`** in that Role, as above):
 
 ```yaml
 - apiGroups: [""]

@@ -1,0 +1,47 @@
+# Redis Enterprise Operator — Role + RoleBinding (same-namespace)
+# Use this as reference or to patch RBAC if the operator cannot create ConfigMaps
+# (e.g. "ConfigMap rec-bulletin-board not found"). Replace YOUR_NAMESPACE with the
+# namespace where the operator and REC run.
+#
+# Apply: kubectl apply -f redis-enterprise-operator-role.yaml -n YOUR_NAMESPACE
+# Or:   sed 's/YOUR_NAMESPACE/my-namespace/' redis-enterprise-operator-role.yaml | kubectl apply -f -
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: redis-enterprise-operator
+  namespace: YOUR_NAMESPACE
+rules:
+  # Custom resources (REC, REDB)
+  - apiGroups: ["app.redislabs.com"]
+    resources: ["redisenterpriseclusters", "redisenterpriseclusters/status", "redisenterprisedatabases", "redisenterprisedatabases/status"]
+    verbs: ["create", "delete", "get", "list", "patch", "update", "watch"]
+  # ConfigMaps (required for rec-bulletin-board and operator coordination)
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    verbs: ["create", "delete", "get", "list", "patch", "update", "watch"]
+  # Pods, Services, StatefulSets, etc.
+  - apiGroups: [""]
+    resources: ["pods", "services", "persistentvolumeclaims", "secrets", "serviceaccounts", "events"]
+    verbs: ["create", "delete", "get", "list", "patch", "update", "watch"]
+  - apiGroups: ["apps"]
+    resources: ["statefulsets", "deployments"]
+    verbs: ["create", "delete", "get", "list", "patch", "update", "watch"]
+  # Optional: for pod exec/logs and other common operator needs
+  - apiGroups: [""]
+    resources: ["pods/log"]
+    verbs: ["get", "list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: redis-enterprise-operator
+  namespace: YOUR_NAMESPACE
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: redis-enterprise-operator
+subjects:
+  - kind: ServiceAccount
+    name: redis-enterprise-operator
+    namespace: YOUR_NAMESPACE
