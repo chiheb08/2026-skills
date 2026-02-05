@@ -1,19 +1,22 @@
-# Redis Enterprise — NetworkPolicy: allow traffic between redis-enterprise pods and all app namespaces
-# App namespaces: redis-enterprise, vllm, litellm-db
+# Redis Enterprise — NetworkPolicy: allow traffic between redis-enterprise pods and app pods (podSelector only)
+# Apps: redis-enterprise, vllm, litellm-db (selected by pod labels).
 # Apply in the same namespace as your REC (redis-enterprise).
 # Prerequisite: CNI must support NetworkPolicy (Calico, OVN-Kubernetes, Cilium, etc.).
 #
-# Pod selector: pods with label app.kubernetes.io/name: redis-enterprise.
-# If your REC pods use a different label (e.g. redis-enterprise: "true"), change matchLabels below.
+# Note: podSelector only matches pods in the policy's namespace. Ensure redis-enterprise, vllm, and
+# litellm-db pods that should talk to each other share a namespace, or apply this policy in each
+# namespace and use the same label conventions.
+#
+# Label conventions used below (adjust matchLabels to your pod labels):
+#   - redis-enterprise: app.kubernetes.io/name: redis-enterprise
+#   - vllm:             app.kubernetes.io/name: vllm
+#   - litellm-db:       app.kubernetes.io/name: litellm-db
 #
 # Apply:
 #   kubectl apply -f redis-enterprise-network-policy.yaml -n redis-enterprise
 #
-# OpenShift: If DNS is in openshift-dns, change the egress DNS rule to use
-#   matchLabels: kubernetes.io/metadata.name: openshift-dns
-#
-# Ingress: Redis Enterprise pods accept traffic from any pod in redis-enterprise, vllm, litellm-db.
-# Egress:  Redis Enterprise pods can reach any pod in redis-enterprise, vllm, litellm-db, plus DNS and external.
+# Ingress: Redis Enterprise pods accept traffic from pods labeled redis-enterprise, vllm, litellm-db.
+# Egress:  Redis Enterprise pods can reach pods labeled redis-enterprise, vllm, litellm-db, plus external.
 ---
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
@@ -21,7 +24,7 @@ metadata:
   name: redis-enterprise-allow
   namespace: redis-enterprise
 spec:
-  # Pods with label "redis-enterprise" (e.g. app.kubernetes.io/name: redis-enterprise)
+  # Pods with label "redis-enterprise"
   podSelector:
     matchLabels:
       app.kubernetes.io/name: redis-enterprise
@@ -29,48 +32,38 @@ spec:
     - Ingress
     - Egress
   ingress:
-    # From redis-enterprise namespace
+    # From redis-enterprise pods (same app)
     - from:
-        - namespaceSelector:
+        - podSelector:
             matchLabels:
-              kubernetes.io/metadata.name: redis-enterprise
-    # From vllm namespace
+              app.kubernetes.io/name: redis-enterprise
+    # From vllm pods
     - from:
-        - namespaceSelector:
+        - podSelector:
             matchLabels:
-              kubernetes.io/metadata.name: vllm
-    # From litellm-db namespace
+              app.kubernetes.io/name: vllm
+    # From litellm-db pods
     - from:
-        - namespaceSelector:
+        - podSelector:
             matchLabels:
-              kubernetes.io/metadata.name: litellm-db
+              app.kubernetes.io/name: litellm-db
   egress:
-    # To redis-enterprise namespace
+    # To redis-enterprise pods
     - to:
-        - namespaceSelector:
+        - podSelector:
             matchLabels:
-              kubernetes.io/metadata.name: redis-enterprise
-    # To vllm namespace
+              app.kubernetes.io/name: redis-enterprise
+    # To vllm pods
     - to:
-        - namespaceSelector:
+        - podSelector:
             matchLabels:
-              kubernetes.io/metadata.name: vllm
-    # To litellm-db namespace
+              app.kubernetes.io/name: vllm
+    # To litellm-db pods
     - to:
-        - namespaceSelector:
+        - podSelector:
             matchLabels:
-              kubernetes.io/metadata.name: litellm-db
-    # DNS (UDP and TCP)
-    - to:
-        - namespaceSelector:
-            matchLabels:
-              kubernetes.io/metadata.name: kube-system
-      ports:
-        - protocol: UDP
-          port: 53
-        - protocol: TCP
-          port: 53
-    # Egress to external (call-home, image pull, etc.)
+              app.kubernetes.io/name: litellm-db
+    # Egress to external (DNS, call-home, image pull, etc.)
     - to:
         - ipBlock:
             cidr: 0.0.0.0/0
