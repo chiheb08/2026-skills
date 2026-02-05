@@ -15,12 +15,12 @@
 # Apply:
 #   kubectl apply -f redis-enterprise-network-policy.yaml -n redis-enterprise
 #
-# If rec-services-rigger logs "get https://rec:9443/v1/nodes: context deadline exceeded", see
-# 10-redis-enterprise-rec-services-rigger-9443-timeout-deep-dive.md and ensure this policy
-# allows traffic from rec-services-rigger (rules below) and that Service rec has endpoints.
+# If rec-services-rigger or redis-enterprise-operator log "get https://rec:9443/... context deadline
+# exceeded", see 10-redis-enterprise-rec-services-rigger-9443-timeout-deep-dive.md and ensure
+# policies allow traffic from operator and services-rigger (rules below) and Service rec has endpoints.
 #
-# Ingress: Redis Enterprise pods accept traffic from redis-enterprise, vllm, litellm-db, and
-# rec-services-rigger. Port 9443 (REC REST API) is explicitly allowed for API callers.
+# Ingress: Redis Enterprise pods accept traffic from redis-enterprise-operator, rec-services-rigger,
+# redis-enterprise, vllm, litellm-db. Port 9443 (REC REST API) is explicitly allowed.
 # Egress:  Redis Enterprise pods can reach redis-enterprise, vllm, litellm-db, plus external.
 ---
 apiVersion: networking.k8s.io/v1
@@ -42,6 +42,15 @@ spec:
         - podSelector:
             matchLabels:
               app.kubernetes.io/name: redis-enterprise
+    # From redis-enterprise-operator (needs rec:9443/v1/nodes and <pod-ip>:9443/v1/cluster)
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: redis-enterprise-operator
+    - from:
+        - podSelector:
+            matchLabels:
+              app: redis-enterprise-operator
     # From rec-services-rigger (and other REC components) so they can reach rec:9443 API
     - from:
         - podSelector:
@@ -87,3 +96,68 @@ spec:
     - to:
         - ipBlock:
             cidr: 0.0.0.0/0
+---
+# Policy for REC cluster pods (rec-0, rec-1, ...) — often labeled app: rec by the operator.
+# If the first policy (redis-enterprise-allow) selects app.kubernetes.io/name: redis-enterprise
+# but your REC pods only have app: rec, they are NOT selected and may be blocked by default-deny.
+# This policy explicitly allows ingress to REC pods on port 9443 (and all ports) from same namespace.
+# Adjust podSelector.matchLabels if your REC uses different labels (e.g. redis.io/cluster: rec).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: rec-allow-9443
+  namespace: redis-enterprise
+spec:
+  podSelector:
+    matchLabels:
+      app: rec
+  policyTypes:
+    - Ingress
+  ingress:
+    # From redis-enterprise-operator (get /v1/nodes, /v1/cluster on rec:9443 and pod IP:9443)
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: redis-enterprise-operator
+      ports:
+        - protocol: TCP
+          port: 9443
+    - from:
+        - podSelector:
+            matchLabels:
+              app: redis-enterprise-operator
+      ports:
+        - protocol: TCP
+          port: 9443
+    # Allow port 9443 from any pod in same namespace (rec-services-rigger, etc.)
+    - from:
+        - podSelector: {}
+      ports:
+        - protocol: TCP
+          port: 9443
+    # Allow all ports from same namespace (cluster internode, services-rigger, operator, etc.)
+    - from:
+        - podSelector: {}
+---
+# Optional: use ONLY if redis-enterprise-operator runs in a DIFFERENT namespace (e.g. operators).
+# podSelector: {} in rec-allow-9443 only matches pods in redis-enterprise; it does not allow
+# the operator in another namespace. Uncomment, set the namespace label, and apply.
+# apiVersion: networking.k8s.io/v1
+# kind: NetworkPolicy
+# metadata:
+#   name: rec-allow-from-operator-namespace
+#   namespace: redis-enterprise
+# spec:
+#   podSelector:
+#     matchLabels:
+#       app: rec
+#   policyTypes:
+#     - Ingress
+#   ingress:
+#     - from:
+#         - namespaceSelector:
+#             matchLabels:
+#               kubernetes.io/metadata.name: operators   # or your operator namespace name
+#       ports:
+#         - protocol: TCP
+#           port: 9443
