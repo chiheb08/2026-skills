@@ -84,11 +84,16 @@ The doc lists two recommendations/known issues. Doing these **before** or **righ
 
 ---
 
-### Mitigation 1: If you change the Redis Enterprise Cluster name
+### Mitigation 1: If you change the Redis Enterprise Cluster name (OpenShift)
 
-**Issue:** If you change the cluster name in the REC spec from the default, the pods need extra permissions (SCC on OpenShift). Without this, the REC pods can be blocked and the REC stays Progressing.
+**What “change the REC name” means:**  
+The **REC name** is the `metadata.name` in your REC YAML (e.g. `rec` or `my-rec`). The doc says “if you change the cluster name from its default” — meaning: you set the REC name to something **you** chose (e.g. `rec`) instead of whatever the operator’s default or template suggests. In practice, you almost always set a name, so you often need this step.
 
-**What to do:** After creating the REC (or before, if you already know the name), run this once per project/namespace. Replace `MY_PROJECT` with the **namespace** where the REC lives, and replace `REC_NAME` with the **name** of the Redis Enterprise Cluster (e.g. `rec`):
+**Why it matters on OpenShift:**  
+On OpenShift, pods run under **Security Context Constraints (SCC)**. The Redis Enterprise operator creates a **service account** for your REC so the REC pods can run. That service account is usually named the **same as the REC** (e.g. REC name `rec` → service account `rec`). There is an SCC called `redis-enterprise-scc-v2` that the REC pods need. By default, that SCC might not be granted to **your** REC’s service account (especially when you use a custom REC name). So the REC pods can be **blocked by security** and never start — the REC stays Progressing.
+
+**What to do:**  
+Grant the SCC to the REC’s service account so the REC pods are allowed to run. After creating the REC (or before, if you already know the name), run this once per project/namespace. Replace `MY_PROJECT` with the **namespace** where the REC lives, and replace `REC_NAME` with the **name** of the Redis Enterprise Cluster (e.g. `rec`), which is usually also the service account name:
 
 ```bash
 oc adm policy add-scc-to-user redis-enterprise-scc-v2 system:serviceaccount:MY_PROJECT:REC_NAME
