@@ -51,19 +51,47 @@ This page explains how to fix the errors you see when deploying Redis Enterprise
 1. **Tell Argo CD to ignore the REC’s status.**  
    So Argo CD won’t overwrite what the operator wrote.
 
-2. **Where to set it:**  
-   Open your Argo CD Application (the one that deploys Redis). Add this under `spec:`:
+2. **Where to set it — two ways:**
+
+   **Option A — In the Application YAML file**  
+   Open the file that defines your Argo CD Application (the one that deploys Redis). Add `ignoreDifferences` **inside** `spec:`, at the **same level** as `source`, `destination`, and `syncPolicy`. Example:
 
    ```yaml
-   ignoreDifferences:
-     - group: app.redislabs.com
-       kind: RedisEnterpriseCluster
-       jqPathExpressions:
-         - .status
+   apiVersion: argoproj.io/v1alpha1
+   kind: Application
+   metadata:
+     name: redis-enterprise
+     namespace: argocd
+   spec:
+     project: default
+     ignoreDifferences:                    # <-- ADD HERE (same level as source, destination)
+       - group: app.redislabs.com
+         kind: RedisEnterpriseCluster
+         jqPathExpressions:
+           - .status
+     source:
+       repoURL: https://github.com/...
+       path: ...
+     destination:
+       server: https://kubernetes.default.svc
+       namespace: redis-enterprise
+     syncPolicy:
+       ...
    ```
 
-3. **In the Argo CD UI:**  
-   Open the app → **App Details** → **Diffing Customization** → add a difference: Group `app.redislabs.com`, Kind `RedisEnterpriseCluster`, and ignore path `.status`.
+   So: **exactly under `spec:`**, **before or after** `source` (same indentation as `source`).
+
+   **Option B — In the Argo CD UI**  
+   1. Open Argo CD in the browser.  
+   2. Click your Redis app (the one that deploys REC/REDB).  
+   3. Click **App Details** (or the three dots → **Application Details**).  
+   4. Find **Diffing Customization** (or **Ignore Differences**).  
+   5. Click **Add** (or **Add Item**).  
+   6. Fill in: **Group** = `app.redislabs.com`, **Kind** = `RedisEnterpriseCluster`, **JQ Path Expression** = `.status` (one entry).  
+   7. Save.
+
+3. **If you use a Kustomize overlay or Helm for the Application:**  
+   Add the same `ignoreDifferences` block under `spec` in the Application manifest that points at your Redis resources (the same Application that has `source` and `destination` for Redis).
 
 4. **Optional:** Turn off **Auto-Sync** for this app for a while. Sync once by hand. When the REC is healthy, turn Auto-Sync back on.
 

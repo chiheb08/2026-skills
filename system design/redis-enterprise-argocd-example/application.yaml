@@ -10,6 +10,12 @@ metadata:
   namespace: argocd
 spec:
   project: default
+  # Ignore REC status so Argo CD doesn't overwrite operator changes (fixes "object has been modified")
+  ignoreDifferences:
+    - group: app.redislabs.com
+      kind: RedisEnterpriseCluster
+      jqPathExpressions:
+        - .status
   source:
     repoURL: https://github.com/chiheb08/2026-skills.git
     targetRevision: main
