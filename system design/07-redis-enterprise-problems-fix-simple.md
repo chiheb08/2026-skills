@@ -9,6 +9,7 @@ This page explains how to fix the errors you see when deploying Redis Enterprise
 1. **"rec not found"** — Argo CD says the admission webhook denied the request because it can’t find the cluster "rec".
 2. **"The object has been modified"** — Argo CD and the operator are both trying to change the REC and they conflict.
 3. **"Pod rec-0 not found"** or **"Waiting for first pod to bootstrap"** — The first Redis pod never starts or never becomes ready.
+4. **"ConfigMap rec-bulletin-board not found"** — The operator keeps saying it can’t find or update the ConfigMap `rec-bulletin-board`.
 
 ---
 
@@ -121,6 +122,50 @@ Then either:
 
 ---
 
+## Fix 4: "ConfigMap rec-bulletin-board not found"
+
+**What it means:** The Redis Enterprise operator uses a ConfigMap named `rec-bulletin-board` (your REC name + `-bulletin-board`) to coordinate the cluster. The operator is supposed to create this ConfigMap when it sets up the REC. If you see "Failed to retrieve bulletin board" or "Failed to update bulletin board: ConfigMap rec-bulletin-board not found", that ConfigMap is missing and the operator is stuck trying to use it.
+
+**Why it’s missing:** Often the operator never got to create it because:
+
+- Argo CD and the operator were conflicting ("object has been modified"), so the operator couldn’t finish its setup.
+- The operator doesn’t have permission to create ConfigMaps in that namespace (RBAC).
+- Something deleted the ConfigMap after the operator created it.
+
+**What to do:**
+
+1. **Fix the conflict first (Fix 2).**  
+   Add **ignoreDifferences** for the REC’s `.status` on your Argo CD Application and optionally disable Auto-Sync. That lets the operator run without being overwritten by GitOps.
+
+2. **Check if the ConfigMap exists.**  
+   Use the namespace where your REC lives (replace `YOUR_NAMESPACE`):
+   ```bash
+   kubectl get configmap rec-bulletin-board -n YOUR_NAMESPACE
+   ```
+   If it doesn’t exist, the operator hasn’t created it yet or couldn’t create it.
+
+3. **Check operator permissions.**  
+   The Redis Enterprise operator needs to create ConfigMaps in the same namespace as the REC. If you installed the operator with Helm/OLM in that namespace, it usually has a Role that allows this. If you see RBAC errors in the operator logs, fix the Role/RoleBinding so the operator can create and update ConfigMaps (and other resources it needs).
+
+4. **Let the operator run without conflict.**  
+   Disable Auto-Sync for the Redis app. Sync once so the REC is applied. Don’t sync again for a few minutes. Watch the operator create the StatefulSet, ConfigMaps, and pods. Check again:
+   ```bash
+   kubectl get configmap -n YOUR_NAMESPACE | grep rec
+   kubectl get rec,sts,pods -n YOUR_NAMESPACE
+   ```
+   If the operator can run without conflict, it should create `rec-bulletin-board` and then the rest.
+
+5. **Last resort: delete the REC and re-apply (only if safe).**  
+   If there is no important data in this REC and you’ve fixed ignoreDifferences and RBAC, you can delete the REC and let the operator recreate everything:
+   ```bash
+   kubectl delete rec rec -n YOUR_NAMESPACE
+   ```
+   Then sync again from Argo CD (or apply your REC YAML again). The operator will create the REC again and, this time, should create `rec-bulletin-board` and the cluster. Only do this if you don’t need to keep the current cluster or its data.
+
+**Summary:** The "rec-bulletin-board not found" message usually means the operator couldn’t finish setting up the REC. Fix the "object has been modified" conflict (ignoreDifferences, disable auto-sync), check RBAC, then let the operator run; it should create the ConfigMap. If not, delete the REC and re-apply only if safe.
+
+---
+
 ## Checklist: do these in order
 
 1. REC and REDB in the **same namespace** as the Redis Enterprise operator.  
@@ -129,7 +174,8 @@ Then either:
 4. (Optional) **Disable Auto-Sync** until the REC is healthy.  
 5. Run **kubectl get rec,sts,pods,pvc** and **events** in that namespace; fix **PVC**, **image pull**, or **memory** if needed.  
 6. If you use Red Hat images, create the **pull secret** and add it to the REC or service account.  
-7. **Sync** (or sync again). Wait for `rec-0` to be Running, then the REDB can be created.
+7. **Sync** (or sync again). Wait for `rec-0` to be Running, then the REDB can be created.  
+8. If you see **"rec-bulletin-board not found"** → Fix the conflict (ignoreDifferences), check RBAC, then let the operator run so it can create the ConfigMap; see Fix 4.
 
 ---
 
@@ -137,4 +183,5 @@ Then either:
 
 - **"rec not found"** → Create REC first, REDB second (use sync waves 0 and 1), same namespace as operator.  
 - **"Object has been modified"** → Add ignoreDifferences for REC `.status` in the Argo CD app; optionally disable auto-sync for a while.  
-- **"rec-0 not found" / "Waiting for first pod"** → Check pods/PVC/events in the namespace; fix storage, image pull secret, or memory; on OpenShift fix SCC if needed.
+- **"rec-0 not found" / "Waiting for first pod"** → Check pods/PVC/events in the namespace; fix storage, image pull secret, or memory; on OpenShift fix SCC if needed.  
+- **"ConfigMap rec-bulletin-board not found"** → Fix the conflict (ignoreDifferences) and RBAC so the operator can create the ConfigMap; if needed, delete the REC and re-apply (only if safe).
