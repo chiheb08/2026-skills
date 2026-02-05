@@ -10,6 +10,7 @@ This page explains how to fix the errors you see when deploying Redis Enterprise
 2. **"The object has been modified"** — Argo CD and the operator are both trying to change the REC and they conflict.
 3. **"Pod rec-0 not found"** or **"Waiting for first pod to bootstrap"** — The first Redis pod never starts or never becomes ready.
 4. **"ConfigMap rec-bulletin-board not found"** — The operator keeps saying it can’t find or update the ConfigMap `rec-bulletin-board`.
+5. **REC stuck in Progressing in Argo CD — REDB never created** — In Argo CD the REC stays "Progressing" (never "Healthy"), and the database (REDB) never gets created. The errors you see are in the REC pods or the operator, not in the Argo CD app pod.
 
 ---
 
@@ -194,6 +195,79 @@ Then either:
 
 ---
 
+## Fix 5: REC stuck in Progressing in Argo CD — REDB never created
+
+**What it means:** In the Argo CD UI, the **REC** (Redis Enterprise Cluster) never becomes "Healthy"; it stays **Progressing**. Because of that, the **REDB** (database) either never gets created or stays pending. The errors you see are in the **REC pods** or in the **Redis Enterprise operator** logs, not in the Argo CD application pod.
+
+**Why it happens:** Argo CD marks the REC as "Healthy" only when the REC resource (and sometimes the things it creates) are ready. The REC becomes ready only when the **operator** has finished setting up the cluster (StatefulSet, pods like `rec-0`, ConfigMap `rec-bulletin-board`, etc.). If the operator is stuck (conflict with Argo CD, missing ConfigMap, pods not starting), the REC never becomes ready, so Argo CD keeps showing Progressing and the REDB can’t be created.
+
+**What to do (in order):**
+
+**Step 1 — Stop Argo CD from fighting the operator**
+
+1. Add **ignoreDifferences** for the REC’s `.status` on your Argo CD Application (see Fix 2 for where exactly).
+2. **Disable Auto-Sync** for the Redis app in Argo CD (App Details → uncheck Auto-Sync). So Argo CD won’t keep reapplying and conflicting with the operator.
+3. **Sync once** (manual Sync). Then don’t sync again for several minutes.
+
+**Step 2 — Fix why the REC never becomes ready (check REC pods and operator)**
+
+Use the namespace where your REC lives (replace `YOUR_NAMESPACE`):
+
+```bash
+export NS=YOUR_NAMESPACE
+
+# REC, StatefulSet, REC pods (rec-0, rec-1, rec-2), PVCs
+kubectl get rec,sts,pods,pvc -n $NS
+
+# Recent events (scheduling, image pull, PVC, OOM)
+kubectl get events -n $NS --sort-by='.lastTimestamp' | tail -40
+```
+
+- **No StatefulSet `rec` or no pods?** The operator didn’t create them yet. Check **operator logs** (the redis-enterprise-operator pod). Fix the "object has been modified" and "rec-bulletin-board not found" issues (Fix 2 and Fix 4) so the operator can create the StatefulSet and ConfigMap.
+- **Pods exist but not Running?** Run `kubectl describe pod rec-0 -n $NS` and look at **Events**. Fix **PVC** (storage class), **image pull** (pull secret for Red Hat registry), or **memory** (increase `redisEnterpriseNodeResources` in the REC). On OpenShift, fix **SCC** if the pod is blocked by security.
+- **Operator logs show "rec-bulletin-board not found"?** Follow Fix 4: after adding ignoreDifferences and disabling auto-sync, let the operator run; it should create the ConfigMap. If not, check RBAC.
+
+**Step 3 — Let the operator finish**
+
+After you’ve added ignoreDifferences and disabled auto-sync:
+
+1. Don’t sync the Redis app again for 5–10 minutes.
+2. Watch the operator create (or update) the StatefulSet, ConfigMaps, and pods. Check:
+   ```bash
+   kubectl get rec,sts,pods,configmap -n $NS | grep rec
+   ```
+3. Wait until **all REC pods** (e.g. `rec-0`, `rec-1`, `rec-2`) are **Running** and ready. The operator will then mark the REC as ready and Argo CD should eventually show the REC as **Healthy** (or at least the cluster will be usable).
+
+**Step 4 — If REC is still stuck Progressing in Argo CD**
+
+Argo CD might be using a health check that never passes for the REC. You can:
+
+- **Option A:** Ignore REC health in Argo CD so the app doesn’t stay "Progressing" forever. In the Application, add under `spec`:
+  ```yaml
+  ignoreDifferences:
+    - group: app.redislabs.com
+      kind: RedisEnterpriseCluster
+      jqPathExpressions:
+        - .status
+  ```
+  (You should already have this.) Then add a **resource custom health check** or tell Argo CD to not treat REC as "Progressing" forever — or just wait until the REC’s status in the cluster is actually ready; some Argo CD versions then show Healthy.
+
+- **Option B:** Ensure the REC is really ready in the cluster. Run:
+  ```bash
+  kubectl get rec rec -n $NS -o yaml
+  ```
+  Look at `status`. When the operator has finished, there is usually a status indicating the cluster is ready. Until then, keep fixing operator/REC pod issues (Step 2).
+
+**Step 5 — Create the REDB only after the REC is ready**
+
+- The **REDB** (database) should be created only after the REC is ready (sync wave 1; see Fix 1). If the REC was stuck Progressing, the REDB may not have been created or may have failed. Once the REC is healthy (pods Running, operator happy):
+  1. Turn Auto-Sync back on if you want, or sync once manually.
+  2. The REDB (wave 1) will be created and should succeed now that the REC exists and is ready.
+
+**Summary:** REC stuck in Progressing = the cluster (REC) never became ready. Fix the conflict (ignoreDifferences, disable auto-sync), then fix why the operator/REC pods are stuck (ConfigMap, PVC, image, memory, RBAC). Once the REC pods are Running and the operator has finished, the REC becomes ready and the REDB can be created.
+
+---
+
 ## Checklist: do these in order
 
 1. REC and REDB in the **same namespace** as the Redis Enterprise operator.  
@@ -203,7 +277,8 @@ Then either:
 5. Run **kubectl get rec,sts,pods,pvc** and **events** in that namespace; fix **PVC**, **image pull**, or **memory** if needed.  
 6. If you use Red Hat images, create the **pull secret** and add it to the REC or service account.  
 7. **Sync** (or sync again). Wait for `rec-0` to be Running, then the REDB can be created.  
-8. If you see **"rec-bulletin-board not found"** → Fix the conflict (ignoreDifferences), check RBAC, then let the operator run so it can create the ConfigMap; see Fix 4.
+8. If you see **"rec-bulletin-board not found"** → Fix the conflict (ignoreDifferences), check RBAC, then let the operator run so it can create the ConfigMap; see Fix 4.  
+9. If **REC is stuck Progressing and REDB never created** → Add ignoreDifferences, disable auto-sync, fix REC pods/operator (ConfigMap, PVC, image, memory), then wait for REC to become ready; see Fix 5.
 
 ---
 
@@ -212,4 +287,5 @@ Then either:
 - **"rec not found"** → Create REC first, REDB second (use sync waves 0 and 1), same namespace as operator.  
 - **"Object has been modified"** → Add ignoreDifferences for REC `.status` in the Argo CD app; optionally disable auto-sync for a while.  
 - **"rec-0 not found" / "Waiting for first pod"** → Check pods/PVC/events in the namespace; fix storage, image pull secret, or memory; on OpenShift fix SCC if needed.  
-- **"ConfigMap rec-bulletin-board not found"** → Fix the conflict (ignoreDifferences) and RBAC so the operator can create the ConfigMap; if needed, delete the REC and re-apply (only if safe).
+- **"ConfigMap rec-bulletin-board not found"** → Fix the conflict (ignoreDifferences) and RBAC so the operator can create the ConfigMap; if needed, delete the REC and re-apply (only if safe).  
+- **REC stuck Progressing, REDB never created** → Add ignoreDifferences, disable auto-sync, fix REC pods and operator (ConfigMap, PVC, image, memory), wait for REC to become ready, then REDB can be created (Fix 5).
