@@ -1,6 +1,34 @@
 # Redis Enterprise — Deep Dive: rec:9443 "context deadline exceeded" (services-rigger and operator)
 
-This document explains **why** you see `get https://rec:9443/v1/nodes` or `get https://<pod-ip>:9443/v1/cluster: context deadline exceeded` in **rec-services-rigger** or **redis-enterprise-operator** logs, and **how to fix it** step by step.
+This document explains **why** you see timeouts to **https://rec:9443/v1/nodes** and **how to fix it** step by step. You may see:
+
+- **rec-services** (Services Manager): `RS API is not available: Get "https://rec:9443/v1/nodes": context deadline exceeded (Client.Timeout)`
+- **rec-services-rigger**: `get https://rec:9443/v1/nodes: context deadline exceeded`
+- **redis-enterprise-operator**: `get https://rec:9443/v1/nodes` or `get https://<pod-ip>:9443/v1/cluster: context deadline exceeded`
+
+Same root cause: the caller cannot reach the REC REST API on port 9443.
+
+---
+
+### Quick fix checklist (run these first)
+
+Use your REC namespace (e.g. `redis-enterprise`); replace if different.
+
+1. **Service rec has endpoints?**  
+   `kubectl get endpoints rec -n redis-enterprise`  
+   → If **no addresses**: REC pods (rec-0, …) are not Ready. Get them Running/Ready first (PVC, image, memory, SCC). See Fix 3–5 in [07-redis-enterprise-problems-fix-simple.md](07-redis-enterprise-problems-fix-simple.md).
+
+2. **REC pods Running and Ready?**  
+   `kubectl get pods -n redis-enterprise | grep rec`  
+   → rec-0 (and peers) must be **Running** and **Ready**. If not, fix pod startup; then 9443 will become reachable.
+
+3. **Apply both NetworkPolicies** (allows rec-services and operator → rec:9443):  
+   `kubectl apply -f redis-enterprise-argocd-example/redis-enterprise-network-policy.yaml -n redis-enterprise`
+
+4. **If it still fails:** Run the troubleshooting script and/or temporarily remove policies to test:  
+   `./troubleshoot-rec-9443.sh redis-enterprise`  
+   `kubectl delete networkpolicy redis-enterprise-allow rec-allow-9443 -n redis-enterprise`  
+   → If the "RS API is not available" errors stop, the fix is to allow the right pod/namespace in policy; re-apply after editing.
 
 ---
 
