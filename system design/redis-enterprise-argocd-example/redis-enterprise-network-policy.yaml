@@ -9,9 +9,10 @@
 # namespace and use the same label conventions.
 #
 # Label conventions used below (adjust matchLabels to your pod labels):
-#   - redis-enterprise: app.kubernetes.io/name: redis-enterprise
-#   - vllm:             app.kubernetes.io/name: vllm
-#   - litellm-db:       app.kubernetes.io/name: litellm-db
+#   - redis-enterprise REC pods: app=redis-enterprise, redis.io/cluster=rec, redis.io/role=node
+#   - rec-services-rigger: app=redis-enterprise, name=services-rigger, redis.io/cluster=rec
+#   - vllm:             app.kubernetes.io/name: vllm (adjust if different)
+#   - litellm-db:       app.kubernetes.io/name: litellm-db (adjust if different)
 #
 # Apply:
 #   kubectl apply -f redis-enterprise-network-policy.yaml -n redis-enterprise
@@ -44,15 +45,13 @@ spec:
         - podSelector:
             matchLabels:
               app: redis-enterprise
-    # From redis-enterprise-operator (needs rec:9443/v1/nodes and <pod-ip>:9443/v1/cluster)
-    - from:
-        - podSelector:
-            matchLabels:
-              app.kubernetes.io/name: redis-enterprise-operator
-    - from:
-        - podSelector:
-            matchLabels:
-              app: redis-enterprise-operator
+    # From redis-enterprise-operator (if it exists and needs rec:9443/v1/nodes)
+    # Note: podSelector: {} below already allows all pods in namespace, so operator is included
+    # If operator has different labels, add a rule here matching those labels
+    # - from:
+    #     - podSelector:
+    #         matchLabels:
+    #           <operator-pod-labels>
     # From rec-services-rigger - your pod has app=redis-enterprise, name=services-rigger
     - from:
         - podSelector:
@@ -118,21 +117,8 @@ spec:
   policyTypes:
     - Ingress
   ingress:
-    # From redis-enterprise-operator (get /v1/nodes, /v1/cluster on rec:9443 and pod IP:9443)
-    - from:
-        - podSelector:
-            matchLabels:
-              app.kubernetes.io/name: redis-enterprise-operator
-      ports:
-        - protocol: TCP
-          port: 9443
-    - from:
-        - podSelector:
-            matchLabels:
-              app: redis-enterprise-operator
-      ports:
-        - protocol: TCP
-          port: 9443
+    # Note: podSelector: {} below already allows all pods in namespace (including operator)
+    # If operator is in a different namespace, uncomment the optional policy at the bottom
     # Allow port 9443 from any pod in same namespace (rec-services-rigger, etc.)
     - from:
         - podSelector: {}
