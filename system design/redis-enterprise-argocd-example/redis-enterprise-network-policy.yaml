@@ -1,6 +1,7 @@
 # Redis Enterprise — NetworkPolicy: allow traffic between redis-enterprise pods and app pods (podSelector only)
 # Apps: redis-enterprise, vllm, litellm-db (selected by pod labels).
-# Apply in the same namespace as your REC (redis-enterprise).
+# Apply in the same namespace as your REC (e.g. redis-enterprise or your OpenShift project name).
+# Replace "redis-enterprise" in metadata.namespace below with your actual namespace if different.
 # Prerequisite: CNI must support NetworkPolicy (Calico, OVN-Kubernetes, Cilium, etc.).
 #
 # Note: podSelector only matches pods in the policy's namespace. Ensure redis-enterprise, vllm, and
@@ -29,19 +30,20 @@ metadata:
   name: redis-enterprise-allow
   namespace: redis-enterprise
 spec:
-  # Pods with label "redis-enterprise" (REC cluster nodes and components that use this label)
+  # Pods with label "redis-enterprise" (REC cluster nodes and components)
+  # Your pods use: app=redis-enterprise (not app.kubernetes.io/name)
   podSelector:
     matchLabels:
-      app.kubernetes.io/name: redis-enterprise
+      app: redis-enterprise
   policyTypes:
     - Ingress
     - Egress
   ingress:
-    # From redis-enterprise pods (same app)
+    # From redis-enterprise pods (same app) - your pods use app=redis-enterprise
     - from:
         - podSelector:
             matchLabels:
-              app.kubernetes.io/name: redis-enterprise
+              app: redis-enterprise
     # From redis-enterprise-operator (needs rec:9443/v1/nodes and <pod-ip>:9443/v1/cluster)
     - from:
         - podSelector:
@@ -51,15 +53,17 @@ spec:
         - podSelector:
             matchLabels:
               app: redis-enterprise-operator
-    # From rec-services-rigger (and other REC components) so they can reach rec:9443 API
+    # From rec-services-rigger - your pod has app=redis-enterprise, redis.io/role=services-rigger
     - from:
         - podSelector:
             matchLabels:
-              app.kubernetes.io/component: services-rigger
+              app: redis-enterprise
+              redis.io/role: services-rigger
     - from:
         - podSelector:
             matchLabels:
-              app: rec
+              app: redis-enterprise
+              redis.io/cluster: rec
     # Explicit: allow ingress to REC pods on port 9443 (REST API) from any pod in same namespace
     - from:
         - podSelector: {}
@@ -77,11 +81,11 @@ spec:
             matchLabels:
               app.kubernetes.io/name: litellm-db
   egress:
-    # To redis-enterprise pods
+    # To redis-enterprise pods - your pods use app=redis-enterprise
     - to:
         - podSelector:
             matchLabels:
-              app.kubernetes.io/name: redis-enterprise
+              app: redis-enterprise
     # To vllm pods
     - to:
         - podSelector:
@@ -97,11 +101,10 @@ spec:
         - ipBlock:
             cidr: 0.0.0.0/0
 ---
-# Policy for REC cluster pods (rec-0, rec-1, ...) — often labeled app: rec by the operator.
-# If the first policy (redis-enterprise-allow) selects app.kubernetes.io/name: redis-enterprise
-# but your REC pods only have app: rec, they are NOT selected and may be blocked by default-deny.
-# This policy explicitly allows ingress to REC pods on port 9443 (and all ports) from same namespace.
-# Adjust podSelector.matchLabels if your REC uses different labels (e.g. redis.io/cluster: rec).
+# Policy for REC cluster pods (rec-0, rec-1, ...) — selected by service "rec".
+# Service "rec" typically uses selectors: app=redis-enterprise, redis.io/cluster=rec, redis.io/role=node.
+# This policy selects the same pods (app=redis-enterprise, redis.io/cluster=rec) so operator and
+# rec-services can reach rec:9443. If your service uses different selectors, adjust matchLabels.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -110,7 +113,8 @@ metadata:
 spec:
   podSelector:
     matchLabels:
-      app: rec
+      app: redis-enterprise
+      redis.io/cluster: rec
   policyTypes:
     - Ingress
   ingress:
