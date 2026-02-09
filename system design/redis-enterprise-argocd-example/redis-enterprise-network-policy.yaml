@@ -53,12 +53,12 @@ spec:
         - podSelector:
             matchLabels:
               app: redis-enterprise-operator
-    # From rec-services-rigger - your pod has app=redis-enterprise, redis.io/role=services-rigger
+    # From rec-services-rigger - your pod has app=redis-enterprise, name=services-rigger
     - from:
         - podSelector:
             matchLabels:
               app: redis-enterprise
-              redis.io/role: services-rigger
+              name: services-rigger
     - from:
         - podSelector:
             matchLabels:
