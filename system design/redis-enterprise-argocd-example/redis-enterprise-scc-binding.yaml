@@ -1,13 +1,19 @@
 # RoleBinding to grant redis-enterprise-scc-v2 SCC to REC ServiceAccount
 # This allows REC pods to use the redis-enterprise-scc-v2 Security Context Constraint
 #
+# HOW IT WORKS:
+# - OpenShift automatically creates a ClusterRole: system:openshift:scc:redis-enterprise-scc-v2
+# - This RoleBinding connects your ServiceAccount to that built-in ClusterRole
+# - The ClusterRole grants permission to use the redis-enterprise-scc-v2 SCC
+# - You DON'T need to create the ClusterRole - OpenShift provides it automatically
+#
 # Usage:
 # 1. Replace <namespace> with your REC namespace (e.g. redis-enterprise)
 # 2. Replace <service-account-name> with your REC ServiceAccount name (usually matches REC name, e.g. rec)
 # 3. Apply via ArgoCD or kubectl: kubectl apply -f redis-enterprise-scc-binding.yaml
 #
-# Note: This requires cluster-admin permissions or SCC admin role to modify SCCs.
-# If you don't have these permissions, ask your platform/security team to apply this.
+# Note: This method uses RBAC (RoleBinding) instead of directly modifying the SCC.
+# If this doesn't work, use the alternative method (direct SCC modification) below.
 
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
