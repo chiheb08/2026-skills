@@ -159,11 +159,13 @@ subjects:
 - OpenShift UI: **Workloads** → **Pods** → **rec-0** → **Details** tab → Look for **Service Account**
 - Or check REC spec if you set it explicitly
 
-### Step 2: Alternative - Direct SCC User Addition (Cluster-level)
+### Step 2: Direct SCC User Addition (Cluster-level) - **RECOMMENDED**
 
 **⚠️ Important:** This method requires **cluster-admin** permissions and may not work through ArgoCD if you don't have cluster-level access. **Check with your platform/security team first.**
 
-If the RoleBinding approach doesn't work, you can create a manifest that directly modifies the SCC:
+**Why this method:** RoleBinding might not work reliably for SCCs. The **direct SCC modification** is the most reliable way to grant SCCs to ServiceAccounts.
+
+If the RoleBinding approach doesn't work (or if pods still show `nonroot-v2`), use this method that directly modifies the SCC:
 
 Create `redis-enterprise-scc-patch.yaml`:
 
