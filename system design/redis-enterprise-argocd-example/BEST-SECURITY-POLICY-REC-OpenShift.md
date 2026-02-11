@@ -42,6 +42,205 @@
 
 ## How to Use `redis-enterprise-scc-v2`
 
+**Choose your method:**
+- **Method 1: OpenShift UI** (if you don't have terminal access) → See section below
+- **Method 2: Manifest file + ArgoCD** (GitOps approach) → See section below
+- **Method 3: Terminal/CLI** (if you have access) → See section below
+
+---
+
+## Method 1: Using OpenShift UI (No Terminal Required)
+
+This method uses the OpenShift Web Console UI, so you don't need terminal/CLI access.
+
+### Step 1: Verify the SCC Exists
+
+1. Log in to **OpenShift Web Console**
+2. Go to **Administration** → **Cluster Settings** → **Security Context Constraints** (or search for "SCC" in the search bar)
+3. Look for **`redis-enterprise-scc-v2`** in the list
+4. If it exists → proceed to Step 2
+5. If it doesn't exist → see "If SCC doesn't exist" section below
+
+### Step 2: Find Your REC ServiceAccount
+
+1. Go to **Workloads** → **Pods**
+2. Find and open your **rec-0** pod
+3. Go to the **Details** tab or **YAML** tab
+4. Look for **Service Account** field (or `spec.serviceAccountName` in YAML)
+5. **Note down the ServiceAccount name** (e.g., `rec` or `default`)
+
+### Step 3: Grant SCC to ServiceAccount via UI
+
+**Option A: Using RBAC (RoleBinding) - Recommended**
+
+1. Go to **User Management** → **RoleBindings** (or search for "RoleBinding")
+2. Click **Create RoleBinding**
+3. Fill in:
+   - **Name:** `redis-enterprise-scc-binding` (or any name you prefer)
+   - **Namespace:** Select your REC namespace (e.g., `redis-enterprise`)
+   - **Role name:** Leave empty or use a custom role
+   - **Subject kind:** Select **ServiceAccount**
+   - **Subject name:** Enter your ServiceAccount name from Step 2 (e.g., `rec`)
+   - **Subject namespace:** Select your REC namespace
+
+**Note:** The UI method for directly adding SCC to ServiceAccount is limited. You may need to use **Option B** (YAML view) or **Method 2** (Manifest file).
+
+**Option B: Using YAML View (Easier - Recommended)**
+
+1. Go to **Administration** → **Security Context Constraints** (or search for "SCC" in the search bar)
+2. Find and open **`redis-enterprise-scc-v2`**
+3. Go to **YAML** tab
+4. Find the **`users`** section (or add it if it doesn't exist)
+5. Add your ServiceAccount in this format:
+   ```yaml
+   users:
+     - system:serviceaccount:<namespace>:<service-account-name>
+   ```
+   **Example:** If namespace is `redis-enterprise` and ServiceAccount is `rec`:
+   ```yaml
+   users:
+     - system:serviceaccount:redis-enterprise:rec
+   ```
+6. Click **Save**
+
+**Note:** If you don't see the **Save** button or get a permission error, you may need cluster-admin permissions. In that case, ask your platform/security team to add the ServiceAccount to the SCC, or use **Method 2 (ArgoCD)** if you have Git access.
+
+### Step 4: Restart REC Pods
+
+1. Go to **Workloads** → **Pods**
+2. Select **rec-0**, **rec-1**, **rec-2** (or all REC pods)
+3. Click **Actions** → **Delete** (or use the trash icon)
+4. Confirm deletion
+5. Pods will be recreated automatically with the new SCC
+
+### Step 5: Verify SCC is Applied
+
+1. Go to **Workloads** → **Pods**
+2. Open **rec-0** pod
+3. Go to **YAML** tab
+4. Look for `metadata.annotations.openshift.io/scc`
+5. It should show: **`redis-enterprise-scc-v2`**
+
+---
+
+## Method 2: Using Manifest File + ArgoCD (GitOps)
+
+This method allows you to manage SCC grants through Git and ArgoCD, following GitOps best practices.
+
+### Step 1: Create RoleBinding Manifest
+
+**A ready-to-use manifest file is available:** `redis-enterprise-scc-binding.yaml` in this repository.
+
+**Or create your own file** named `redis-enterprise-scc-binding.yaml`:
+
+```yaml
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: redis-enterprise-scc-binding
+  namespace: redis-enterprise  # Replace with your namespace
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"  # Apply before REC
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: system:openshift:scc:redis-enterprise-scc-v2
+subjects:
+  - kind: ServiceAccount
+    name: rec  # Replace with your ServiceAccount name
+    namespace: redis-enterprise  # Replace with your namespace
+```
+
+**Important:** Replace:
+- `namespace: redis-enterprise` → Your actual namespace
+- `name: rec` → Your actual ServiceAccount name
+
+**To find your ServiceAccount name:**
+- OpenShift UI: **Workloads** → **Pods** → **rec-0** → **Details** tab → Look for **Service Account**
+- Or check REC spec if you set it explicitly
+
+### Step 2: Alternative - Direct SCC User Addition (Cluster-level)
+
+**⚠️ Important:** This method requires **cluster-admin** permissions and may not work through ArgoCD if you don't have cluster-level access. **Check with your platform/security team first.**
+
+If the RoleBinding approach doesn't work, you can create a manifest that directly modifies the SCC:
+
+Create `redis-enterprise-scc-patch.yaml`:
+
+```yaml
+apiVersion: security.openshift.io/v1
+kind: SecurityContextConstraints
+metadata:
+  name: redis-enterprise-scc-v2
+users:
+  - system:serviceaccount:redis-enterprise:rec  # Replace with your namespace:serviceaccount
+```
+
+**Apply via ArgoCD:**
+- Add this file to your Git repository
+- ArgoCD will sync it (if you have permissions to modify SCCs)
+- **Note:** SCC modifications are cluster-scoped and typically require cluster-admin permissions
+
+**If you don't have cluster-admin access:**
+- Use **Method 1 (OpenShift UI)** and ask your platform team to grant the SCC
+- Or ask your platform team to apply the RoleBinding or SCC modification for you
+
+### Step 3: Add to ArgoCD Application
+
+**Option A: Add to existing REC application**
+
+1. Add `redis-enterprise-scc-binding.yaml` to the same directory as your `rec.yaml`
+2. ArgoCD will automatically sync it
+
+**Option B: Create separate ArgoCD application**
+
+Create `redis-enterprise-scc-application.yaml`:
+
+```yaml
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: redis-enterprise-scc
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/your-org/your-repo.git  # Replace with your repo
+    targetRevision: main
+    path: system design/redis-enterprise-argocd-example  # Path to your manifests
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: redis-enterprise  # Replace with your namespace
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+```
+
+### Step 4: Verify in ArgoCD
+
+1. Open ArgoCD UI
+2. Check your application shows **Synced** and **Healthy**
+3. Verify the RoleBinding exists:
+   - In OpenShift UI: **User Management** → **RoleBindings** → Look for `redis-enterprise-scc-binding`
+
+### Step 5: Restart REC Pods
+
+After ArgoCD syncs the RoleBinding, restart REC pods (via OpenShift UI or ArgoCD sync):
+
+**Via OpenShift UI:**
+1. **Workloads** → **Pods** → Select rec-0, rec-1, rec-2 → **Actions** → **Delete**
+
+**Via ArgoCD:**
+1. Open your REC application
+2. Click **Sync** → **Synchronize** (this will recreate pods if needed)
+
+---
+
+## Method 3: Using Terminal/CLI (If You Have Access)
+
 ### Step 1: Verify the SCC Exists
 
 The `redis-enterprise-scc-v2` SCC should be created automatically when you install the Redis Enterprise Operator. Verify it exists:
