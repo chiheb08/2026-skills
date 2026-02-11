@@ -1,0 +1,26 @@
+# Direct SCC modification - adds ServiceAccount to redis-enterprise-scc-v2 users list
+# This is the RELIABLE way to grant SCCs (RoleBinding might not work)
+#
+# HOW IT WORKS:
+# - This manifest MODIFIES the existing redis-enterprise-scc-v2 SCC
+# - It adds your ServiceAccount to the SCC's "users" list
+# - OpenShift will then allow pods using this ServiceAccount to use the SCC
+#
+# Usage:
+# 1. Replace redis-enterprise:rec with your namespace:serviceaccount
+#    Format: system:serviceaccount:<namespace>:<service-account-name>
+# 2. Apply via ArgoCD or kubectl (requires cluster-admin permissions)
+# 3. If you don't have cluster-admin, ask platform/security team to apply this
+#
+# To find your ServiceAccount:
+# - OpenShift UI: Workloads → Pods → rec-0 → Details → Service Account
+# - Or: kubectl get pod rec-0 -n <namespace> -o jsonpath='{.spec.serviceAccountName}'
+
+apiVersion: security.openshift.io/v1
+kind: SecurityContextConstraints
+metadata:
+  name: redis-enterprise-scc-v2
+users:
+  - system:serviceaccount:redis-enterprise:rec  # TODO: Replace with your namespace:serviceaccount
+  # If you have multiple ServiceAccounts, add them all:
+  # - system:serviceaccount:redis-enterprise:another-sa
