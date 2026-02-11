@@ -2,6 +2,8 @@
 
 This guide explains the error in simple terms and how to fix it.
 
+**Note:** If your pod shows `openshift.io/scc: nonroot-v2`, this SCC can also cause exit status 126. The fix (adding `anyuid` SCC) works for `nonroot-v2`, `restricted-v2`, and `restricted` SCCs.
+
 ---
 
 ## Glossary (Technical Terms Explained)
@@ -225,7 +227,7 @@ kubectl exec -it rec-0 -n <namespace> -- ldd /opt/redislabs/bin/pdns_server
 
 | What you see | What it means | What to do |
 |--------------|----------------|------------|
-| `pdns_server (exit status 126)` | OpenShift is blocking the pod from running this program | Add **anyuid** SCC to the ServiceAccount used by REC pods |
+| `pdns_server (exit status 126)` | OpenShift SCC (like `nonroot-v2`, `restricted-v2`, or `restricted`) is blocking the pod from running this program | Add **anyuid** SCC to the ServiceAccount used by REC pods |
 | `Node Type is None` | Bootstrap didn’t finish because `pdns_server` never ran | Same fix: once `pdns_server` runs, bootstrap completes and node type is set |
 | Pod **1/2** | One part of the pod is ready, the other (with `pdns_server`/bootstrap) is not | After the fix and restart, pod should go **2/2** |
 
