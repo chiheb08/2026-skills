@@ -23,7 +23,9 @@
 #
 # Ingress: Redis Enterprise pods accept traffic from redis-enterprise-operator, rec-services-rigger,
 # redis-enterprise, vllm, litellm-db. Port 9443 (REC REST API) is explicitly allowed.
-# Egress:  Redis Enterprise pods can reach redis-enterprise, vllm, litellm-db, plus external.
+# Egress:  Redis Enterprise pods can reach redis-enterprise (internode communication on ports 3333-3345,
+# 20000-29999), vllm, litellm-db, plus external. Internode communication is required for rec-1, rec-2
+# to bootstrap and join the cluster.
 ---
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
@@ -80,7 +82,28 @@ spec:
             matchLabels:
               app.kubernetes.io/name: litellm-db
   egress:
-    # To redis-enterprise pods - your pods use app=redis-enterprise
+    # To redis-enterprise pods (internode communication) - your pods use app=redis-enterprise
+    # This allows rec-0, rec-1, rec-2 to communicate with each other for cluster formation
+    - to:
+        - podSelector:
+            matchLabels:
+              app: redis-enterprise
+              redis.io/cluster: rec
+      ports:
+        # Internode communication ports (required for rec-1, rec-2 to bootstrap and join cluster)
+        - protocol: TCP
+          port: 3333-3345
+        - protocol: TCP
+          port: 20000-29999
+        # REST API port (9443) for cluster management
+        - protocol: TCP
+          port: 9443
+        # Other REC ports (8443 UI, 8001 discovery, etc.)
+        - protocol: TCP
+          port: 8443
+        - protocol: TCP
+          port: 8001
+    # To redis-enterprise pods (all ports, fallback for other communication)
     - to:
         - podSelector:
             matchLabels:
