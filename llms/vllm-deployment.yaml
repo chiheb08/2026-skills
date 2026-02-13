@@ -1,0 +1,252 @@
+# vLLM Deployment Manifest for OpenShift
+# This manifest deploys a vLLM inference server serving a specific model
+#
+# Usage:
+# 1. Replace placeholders (TODO comments) with your values:
+#    - <model-name>: e.g. llama-2-7b, codellama-13b, mistral-7b
+#    - <namespace>: e.g. llm-platform
+#    - <model-path>: Path to model in PVC or HuggingFace model ID
+#    - <gpu-count>: Number of GPUs per pod (1 for 7B models, 2 for 70B models)
+#    - <memory>: Memory request/limit based on model size
+# 2. Adjust replicas based on your load requirements
+# 3. Deploy via ArgoCD or kubectl: kubectl apply -f vllm-deployment.yaml
+#
+# Example models:
+# - Llama 2 7B: 1 GPU, 80Gi RAM, 2 replicas
+# - CodeLlama 13B: 1 GPU, 80Gi RAM, 2 replicas
+# - Mistral 7B: 1 GPU, 80Gi RAM, 2 replicas
+# - Llama 2 70B: 2 GPUs, 160Gi RAM, 1 replica
+
+---
+# ConfigMap for vLLM configuration (optional - if you need custom vLLM settings)
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: vllm-<model-name>-config  # TODO: Replace <model-name>
+  namespace: llm-platform  # TODO: Replace with your namespace
+  labels:
+    app.kubernetes.io/name: vllm
+    app.kubernetes.io/component: inference
+    model: <model-name>  # TODO: Replace <model-name>
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
+data:
+  # Optional: vLLM configuration file
+  # Uncomment and customize if needed
+  # config.yaml: |
+  #   tensor-parallel-size: 1
+  #   max-model-len: 4096
+  #   gpu-memory-utilization: 0.9
+
+---
+# PersistentVolumeClaim for model storage (if using shared PVC)
+# Uncomment if you're using a shared PVC for models
+# If models are in the container image, you don't need this
+---
+# apiVersion: v1
+# kind: PersistentVolumeClaim
+# metadata:
+#   name: vllm-<model-name>-models-pvc  # TODO: Replace <model-name>
+#   namespace: llm-platform  # TODO: Replace with your namespace
+#   labels:
+#     app.kubernetes.io/name: vllm
+#     model: <model-name>
+#   annotations:
+#     argocd.argoproj.io/sync-wave: "0"
+# spec:
+#   accessModes:
+#     - ReadOnlyMany  # Multiple pods can mount read-only
+#   storageClassName: <storage-class>  # TODO: Replace with your storage class
+#   resources:
+#     requests:
+#       storage: 100Gi  # TODO: Adjust based on model size (7B ~14GB, 13B ~26GB, 70B ~140GB)
+
+---
+# Deployment for vLLM inference server
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vllm-<model-name>  # TODO: Replace <model-name> (e.g. vllm-llama-2-7b)
+  namespace: llm-platform  # TODO: Replace with your namespace
+  labels:
+    app.kubernetes.io/name: vllm
+    app.kubernetes.io/component: inference
+    model: <model-name>  # TODO: Replace <model-name>
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+    description: "vLLM inference server for <model-name>"  # TODO: Replace <model-name>
+spec:
+  replicas: 2  # TODO: Adjust based on load (2 for 7B/13B models, 1 for 70B)
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: vllm
+      model: <model-name>  # TODO: Replace <model-name>
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: vllm
+        app.kubernetes.io/component: inference
+        model: <model-name>  # TODO: Replace <model-name>
+    spec:
+      # ServiceAccount (optional - create if you need specific RBAC)
+      # serviceAccountName: vllm-serviceaccount
+      
+      # Node selector for GPU nodes (if you have dedicated GPU nodes)
+      # nodeSelector:
+      #   accelerator: nvidia-gpu
+      #   node-type: gpu
+      
+      # Tolerations for GPU nodes (if nodes have taints)
+      # tolerations:
+      #   - key: nvidia.com/gpu
+      #     operator: Exists
+      #     effect: NoSchedule
+      
+      containers:
+      - name: vllm
+        image: vllm/vllm-openai:v0.6.1  # TODO: Use specific version tag, not latest
+        imagePullPolicy: IfNotPresent
+        
+        # Command and args for vLLM
+        # Model can be:
+        # - HuggingFace model ID: meta-llama/Llama-2-7b-chat-hf
+        # - Local path in PVC: /models/llama-2-7b
+        args:
+          - --model
+          - <model-path>  # TODO: Replace (e.g. meta-llama/Llama-2-7b-chat-hf or /models/llama-2-7b)
+          - --port
+          - "8000"
+          - --host
+          - "0.0.0.0"
+          - --tensor-parallel-size
+          - "1"  # TODO: Set to GPU count per pod (1 for single GPU, 2 for multi-GPU)
+          - --gpu-memory-utilization
+          - "0.9"  # Use 90% of GPU memory
+          # Optional: Add more vLLM arguments as needed
+          # - --max-model-len
+          # - "4096"
+          # - --trust-remote-code
+        
+        ports:
+        - name: http
+          containerPort: 8000
+          protocol: TCP
+        
+        # Resource requests and limits
+        resources:
+          requests:
+            # GPU request (required for GPU nodes)
+            nvidia.com/gpu: 1  # TODO: Set to 1 for 7B/13B models, 2 for 70B models
+            memory: "80Gi"  # TODO: Adjust based on model (7B: 80Gi, 13B: 80Gi, 70B: 160Gi)
+            cpu: "4"  # CPU for vLLM overhead
+          limits:
+            nvidia.com/gpu: 1  # TODO: Must match request
+            memory: "100Gi"  # TODO: Slightly higher than request
+            cpu: "8"
+        
+        # Environment variables
+        env:
+        - name: CUDA_VISIBLE_DEVICES
+          value: "0"  # TODO: Adjust if using multiple GPUs (0,1 for 2 GPUs)
+        - name: VLLM_USE_MODELSCOPE
+          value: "False"  # Set to True if using ModelScope models
+        # Optional: Add more environment variables
+        # - name: VLLM_WORKER_MULTIPROC_METHOD
+        #   value: "spawn"
+        
+        # Volume mounts (if using PVC for models)
+        # Uncomment if you're mounting models from PVC
+        # volumeMounts:
+        # - name: models
+        #   mountPath: /models
+        #   readOnly: true
+        
+        # Health checks
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8000
+          initialDelaySeconds: 60  # vLLM takes time to load model
+          periodSeconds: 30
+          timeoutSeconds: 10
+          failureThreshold: 3
+        
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8000
+          initialDelaySeconds: 120  # Wait for model to load
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        
+        # Security context (for OpenShift)
+        securityContext:
+          allowPrivilegeEscalation: false
+          runAsNonRoot: true
+          runAsUser: 1000
+          capabilities:
+            drop:
+              - ALL
+          readOnlyRootFilesystem: false  # vLLM needs write access for cache
+        
+      # Volumes (if using PVC for models)
+      # Uncomment if you're mounting models from PVC
+      # volumes:
+      # - name: models
+      #   persistentVolumeClaim:
+      #     claimName: vllm-<model-name>-models-pvc  # TODO: Replace <model-name>
+      
+      # Restart policy
+      restartPolicy: Always
+
+---
+# Service for vLLM deployment
+apiVersion: v1
+kind: Service
+metadata:
+  name: vllm-<model-name>-service  # TODO: Replace <model-name> (e.g. vllm-llama-2-7b-service)
+  namespace: llm-platform  # TODO: Replace with your namespace
+  labels:
+    app.kubernetes.io/name: vllm
+    app.kubernetes.io/component: inference
+    model: <model-name>  # TODO: Replace <model-name>
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+    description: "Service for vLLM <model-name> inference"  # TODO: Replace <model-name>
+spec:
+  type: ClusterIP  # Internal service (LiteLLM connects internally)
+  ports:
+  - name: http
+    port: 8000
+    targetPort: 8000
+    protocol: TCP
+  selector:
+    app.kubernetes.io/name: vllm
+    model: <model-name>  # TODO: Replace <model-name>
+  sessionAffinity: None  # Load balance across replicas
+
+---
+# Optional: OpenShift Route (if you need external access)
+# Uncomment if you want external access to vLLM (not recommended for production)
+# LiteLLM should be the only external entry point
+---
+# apiVersion: route.openshift.io/v1
+# kind: Route
+# metadata:
+#   name: vllm-<model-name>-route  # TODO: Replace <model-name>
+#   namespace: llm-platform  # TODO: Replace with your namespace
+#   labels:
+#     app.kubernetes.io/name: vllm
+#     model: <model-name>
+#   annotations:
+#     argocd.argoproj.io/sync-wave: "2"
+# spec:
+#   to:
+#     kind: Service
+#     name: vllm-<model-name>-service  # TODO: Replace <model-name>
+#   port:
+#     targetPort: http
+#   tls:
+#     termination: edge
+#     insecureEdgeTerminationPolicy: Redirect

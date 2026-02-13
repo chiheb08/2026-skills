@@ -1,0 +1,110 @@
+# vLLM Deployment Example: Llama 2 7B
+# This is a complete, ready-to-use example for deploying Llama 2 7B with vLLM
+# Customize values as needed for your environment
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vllm-llama-2-7b
+  namespace: llm-platform
+  labels:
+    app.kubernetes.io/name: vllm
+    app.kubernetes.io/component: inference
+    model: llama-2-7b
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+    description: "vLLM inference server for Llama 2 7B"
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: vllm
+      model: llama-2-7b
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: vllm
+        app.kubernetes.io/component: inference
+        model: llama-2-7b
+    spec:
+      containers:
+      - name: vllm
+        image: vllm/vllm-openai:v0.6.1
+        imagePullPolicy: IfNotPresent
+        args:
+          - --model
+          - meta-llama/Llama-2-7b-chat-hf  # HuggingFace model ID
+          - --port
+          - "8000"
+          - --host
+          - "0.0.0.0"
+          - --tensor-parallel-size
+          - "1"
+          - --gpu-memory-utilization
+          - "0.9"
+        ports:
+        - name: http
+          containerPort: 8000
+          protocol: TCP
+        resources:
+          requests:
+            nvidia.com/gpu: 1
+            memory: "80Gi"
+            cpu: "4"
+          limits:
+            nvidia.com/gpu: 1
+            memory: "100Gi"
+            cpu: "8"
+        env:
+        - name: CUDA_VISIBLE_DEVICES
+          value: "0"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8000
+          initialDelaySeconds: 60
+          periodSeconds: 30
+          timeoutSeconds: 10
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8000
+          initialDelaySeconds: 120
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        securityContext:
+          allowPrivilegeEscalation: false
+          runAsNonRoot: true
+          runAsUser: 1000
+          capabilities:
+            drop:
+              - ALL
+          readOnlyRootFilesystem: false
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: vllm-llama-2-7b-service
+  namespace: llm-platform
+  labels:
+    app.kubernetes.io/name: vllm
+    app.kubernetes.io/component: inference
+    model: llama-2-7b
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+    description: "Service for vLLM Llama 2 7B inference"
+spec:
+  type: ClusterIP
+  ports:
+  - name: http
+    port: 8000
+    targetPort: 8000
+    protocol: TCP
+  selector:
+    app.kubernetes.io/name: vllm
+    model: llama-2-7b
+  sessionAffinity: None
