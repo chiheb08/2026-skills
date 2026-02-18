@@ -49,14 +49,57 @@ echo $REDIS_HOST
 echo $REDIS_PORT
 ```
 
-If not set, check your deployment (e.g. `REDIS_HOST=redis.llm-data.svc.cluster.local`, `REDIS_PORT=6379`), or for Redis Enterprise the DB service name (e.g. `my-redb.redis-enterprise.svc.cluster.local` and port often `12000` or `6379`).
+**Common scenarios:**
+
+**Scenario A: Separate host and port**
+- `REDIS_HOST` = `redis.llm-data.svc.cluster.local` (or Redis Enterprise DB service name)
+- `REDIS_PORT` = `6379` (or `12000` for Redis Enterprise)
+
+**Scenario B: Connection string in REDIS_PORT (your case)**
+- `REDIS_HOST` = empty or not set
+- `REDIS_PORT` = `tcp://172.30.159.178:6379` (full connection string with IP and port)
+
+**If you see `tcp://IP:PORT` format:**
+
+Extract host and port from the connection string:
+
+```bash
+# Extract IP/host and port from tcp:// format
+REDIS_CONN=$(echo $REDIS_PORT | sed 's|tcp://||')
+REDIS_IP=$(echo $REDIS_CONN | cut -d: -f1)
+REDIS_PORT_NUM=$(echo $REDIS_CONN | cut -d: -f2)
+
+echo "Redis IP: $REDIS_IP"
+echo "Redis Port: $REDIS_PORT_NUM"
+```
+
+**Example output:**
+```
+Redis IP: 172.30.159.178
+Redis Port: 6379
+```
+
+**Or use the connection string directly** (if your tools support it).
 
 ### Step 2: Test TCP connectivity to Redis
 
-**Using `nc` (netcat):**
+**If REDIS_PORT contains `tcp://IP:PORT` format:**
 
 ```bash
-# Replace with your REDIS_HOST and REDIS_PORT
+# Extract IP and port from tcp:// format
+REDIS_CONN=$(echo $REDIS_PORT | sed 's|tcp://||')
+REDIS_IP=$(echo $REDIS_CONN | cut -d: -f1)
+REDIS_PORT_NUM=$(echo $REDIS_CONN | cut -d: -f2)
+
+# Test TCP connectivity using extracted IP and port
+nc -zv $REDIS_IP $REDIS_PORT_NUM
+# Example: nc -zv 172.30.159.178 6379
+```
+
+**If you have separate REDIS_HOST and REDIS_PORT:**
+
+```bash
+# Standard format
 nc -zv $REDIS_HOST $REDIS_PORT
 # Example: nc -zv redis.llm-data.svc.cluster.local 6379
 ```
